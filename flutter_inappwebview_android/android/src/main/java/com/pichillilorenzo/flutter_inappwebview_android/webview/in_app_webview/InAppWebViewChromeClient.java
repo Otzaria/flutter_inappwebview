@@ -1000,6 +1000,7 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
 
     boolean images = acceptsImages(acceptType);
     boolean video = acceptsVideo(acceptType);
+    boolean audio = acceptsAudio(acceptType);
 
     Intent pickerIntent = null;
 
@@ -1009,6 +1010,12 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
           pickerIntent = getPhotoIntent();
         } else if (video) {
           pickerIntent = getVideoIntent();
+        }
+      }
+      if (pickerIntent == null && audio && !images && !video) {
+        Intent audioIntent = getAudioIntent();
+        if (canResolveIntent(audioIntent)) {
+          pickerIntent = audioIntent;
         }
       }
     }
@@ -1023,6 +1030,12 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
         }
         if (video) {
           extraIntents.add(getVideoIntent());
+        }
+      }
+      if (audio) {
+        Intent audioIntent = getAudioIntent();
+        if (canResolveIntent(audioIntent)) {
+          extraIntents.add(audioIntent);
         }
       }
       pickerIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, extraIntents.toArray(new Parcelable[]{}));
@@ -1043,6 +1056,7 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
 
     boolean images = acceptsImages(acceptTypes);
     boolean video = acceptsVideo(acceptTypes);
+    boolean audio = acceptsAudio(acceptTypes);
 
     Intent pickerIntent = null;
 
@@ -1054,6 +1068,12 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
           pickerIntent = getVideoIntent();
         }
       }
+      if (pickerIntent == null && audio && !images && !video) {
+        Intent audioIntent = getAudioIntent();
+        if (canResolveIntent(audioIntent)) {
+          pickerIntent = audioIntent;
+        }
+      }
     }
     if (pickerIntent == null) {
       ArrayList<Parcelable> extraIntents = new ArrayList<>();
@@ -1063,6 +1083,12 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
         }
         if (video) {
           extraIntents.add(getVideoIntent());
+        }
+      }
+      if (audio) {
+        Intent audioIntent = getAudioIntent();
+        if (canResolveIntent(audioIntent)) {
+          extraIntents.add(audioIntent);
         }
       }
 
@@ -1116,6 +1142,10 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
     videoOutputFileUri = getOutputUri(MediaStore.ACTION_VIDEO_CAPTURE);
     intent.putExtra(MediaStore.EXTRA_OUTPUT, videoOutputFileUri);
     return intent;
+  }
+
+  private Intent getAudioIntent() {
+    return new Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION);
   }
 
   private Intent getFileChooserIntent(String acceptTypes) {
@@ -1180,6 +1210,19 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
   private Boolean acceptsVideo(String[] types) {
     String[] mimeTypes = getAcceptedMimeType(types);
     return acceptsAny(types) || arrayContainsString(mimeTypes, "video");
+  }
+
+  private Boolean acceptsAudio(String types) {
+    String mimeType = types;
+    if (types.matches("\\.\\w+")) {
+      mimeType = getMimeTypeFromExtension(types.replace(".", ""));
+    }
+    return mimeType != null && mimeType.toLowerCase().contains("audio");
+  }
+
+  private Boolean acceptsAudio(String[] types) {
+    String[] mimeTypes = getAcceptedMimeType(types);
+    return arrayContainsString(mimeTypes, "audio");
   }
 
   private Boolean arrayContainsString(String[] array, String pattern) {
@@ -1295,6 +1338,11 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
     // i.e. <input type="file" />, without any "accept" attr
     // will be an array with one empty string element, afaik
     return arr.length == 0 || (arr.length == 1 && arr[0].length() == 0);
+  }
+
+  private boolean canResolveIntent(Intent intent) {
+    Activity activity = getActivity();
+    return activity != null && intent.resolveActivity(activity.getPackageManager()) != null;
   }
 
   @Override

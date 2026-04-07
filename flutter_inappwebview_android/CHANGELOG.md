@@ -1,5 +1,7 @@
 ## 1.2.0-beta.3
 
+- Added audio capture to Android file choosers, with file-selection fallback
+  when no recorder is installed.
 - Avoided the deprecated status-bar color call when Android 15 edge-to-edge is
   enforced, while preserving legacy target-SDK behavior.
 - Reduced Java deprecation warnings while preserving synchronous session-cookie
