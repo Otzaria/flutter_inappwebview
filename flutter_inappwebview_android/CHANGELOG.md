@@ -1,5 +1,7 @@
 ## 1.2.0-beta.3
 
+- Reduced Java deprecation warnings while preserving synchronous session-cookie
+  clearing [#2641](https://github.com/pichillilorenzo/flutter_inappwebview/issues/2641).
 - Fixed nullable Android context-menu action titles.
 - Restricted captured-media FileProvider access to the app-scoped `Captures`
   directory.
