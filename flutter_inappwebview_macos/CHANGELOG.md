@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Fixed native WebView frame drift with fractional platform-view sizes.
 - Added `WebAuthenticationSession.additionalHeaderFields` on macOS 14.4+.
 - Prevented `upgradeKnownHostsToHTTPS` crashes on macOS 11.x.
 - Fixed IIFE evaluation in named content worlds when the print bridge is active.
