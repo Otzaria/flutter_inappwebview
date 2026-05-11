@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Added `WebAuthenticationSession.additionalHeaderFields` on macOS 14.4+.
 - Prevented `upgradeKnownHostsToHTTPS` crashes on macOS 11.x.
 - Fixed IIFE evaluation in named content worlds when the print bridge is active.
 - Fixed Xcode 26 builds when targeting macOS 10.14.

@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Added `WebAuthenticationSession.additionalHeaderFields` on iOS 17.4+.
 - Prevented `evaluateJavascript` crashes in popup WebViews on iOS 14 through 17.
 - Restored scroll insets after dismissing the keyboard on iOS 17.2 and later.
 - Fixed IIFE evaluation in named content worlds when the print bridge is active.

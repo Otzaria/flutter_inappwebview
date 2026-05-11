@@ -1,5 +1,7 @@
 ## 6.2.0-beta.3
 
+- Added `WebAuthenticationSession.additionalHeaderFields` on iOS 17.4+ and
+  macOS 14.4+.
 - Added Linux support
 - Updated dependencies to the latest versions for all platform implementations:
   - `flutter_inappwebview_platform_interface`: `^1.4.0-beta.2` -> `^1.4.0-beta.3`
