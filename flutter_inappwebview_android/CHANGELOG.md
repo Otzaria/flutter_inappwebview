@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Fixed nullable Android context-menu action titles.
 - Restricted captured-media FileProvider access to the app-scoped `Captures`
   directory.
 - Updated flutter_inappwebview_platform_interface version to ^1.4.0-beta.3
