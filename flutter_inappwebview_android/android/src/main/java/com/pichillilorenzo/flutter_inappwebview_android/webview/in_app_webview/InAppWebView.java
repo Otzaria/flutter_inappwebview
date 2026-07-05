@@ -142,6 +142,8 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
   public InAppWebViewSettings customSettings = new InAppWebViewSettings();
   public boolean isLoading = false;
   private boolean inFullscreen = false;
+  @Nullable
+  private Integer customBackgroundColor;
   public float zoomScale = 1.0f;
   public ContentBlockerHandler contentBlockerHandler = new ContentBlockerHandler();
   @Nullable
@@ -749,6 +751,11 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     CookieManager.getInstance().removeSessionCookie();
   }
 
+  public void setCustomBackgroundColor(int color) {
+    customBackgroundColor = color;
+    setBackgroundColor(color);
+  }
+
   /**
    * @deprecated
    */
@@ -952,7 +959,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
       if (newCustomSettings.transparentBackground) {
         setBackgroundColor(Color.TRANSPARENT);
       } else {
-        setBackgroundColor(Color.parseColor("#FFFFFF"));
+        setBackgroundColor(customBackgroundColor != null ? customBackgroundColor : Color.WHITE);
       }
     }
 

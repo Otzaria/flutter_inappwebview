@@ -1,5 +1,6 @@
 ## 1.4.0-beta.3
 
+- Added `PlatformInAppWebViewController.setBackgroundColor` for Android.
 - Added `PlatformWebAuthenticationSession.additionalHeaderFields`.
 - Added the Windows `PERSISTENT_STORAGE` permission resource and safe handling
   for permission kinds introduced by newer WebView2 runtimes.

@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview_android/flutter_inappwebview_android.dart';
 import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
@@ -57,5 +59,34 @@ void main() {
 
     expect(clickedItem!.title, 'Configured item');
     expect(configuredActionCalled, isTrue);
+  });
+
+  test('setBackgroundColor sends lossless ARGB hex values', () async {
+    const channel = MethodChannel('com.pichillilorenzo/flutter_inappwebview_2');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return true;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final controller = AndroidInAppWebViewController(
+      const AndroidInAppWebViewControllerCreationParams(id: 2),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.setBackgroundColor(const Color(0xffffffff));
+    await controller.setBackgroundColor(const Color(0x00112233));
+
+    expect(
+      calls.map((call) => call.method),
+      everyElement('setBackgroundColor'),
+    );
+    expect(calls[0].arguments, {'color': '#ffffffff'});
+    expect(calls[1].arguments, {'color': '#00112233'});
   });
 }

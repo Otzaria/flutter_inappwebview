@@ -1,5 +1,6 @@
 ## 6.2.0-beta.3
 
+- Added Android `InAppWebViewController.setBackgroundColor`.
 - Added `WebAuthenticationSession.additionalHeaderFields` on iOS 17.4+ and
   macOS 14.4+.
 - Added Linux support
