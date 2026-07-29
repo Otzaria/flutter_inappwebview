@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Fixed IIFE evaluation in named content worlds when the print bridge is active.
 - Fixed Xcode 26 builds when targeting macOS 10.14.
 - Updated flutter_inappwebview_platform_interface version to ^1.4.0-beta.3
 - Implemented `saveState`, `restoreState` InAppWebViewController methods
