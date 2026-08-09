@@ -920,7 +920,9 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
       case PICKER_LEGACY:
         Uri result = null;
         if (resultCode == RESULT_OK) {
-          result = data != null ? data.getData() : getCapturedMediaFile();
+          result = data != null
+                  ? sanitizeFileChooserUri(data.getData())
+                  : getCapturedMediaFile();
         }
         if (filePathCallbackLegacy != null) {
           filePathCallbackLegacy.onReceiveValue(result);
@@ -940,7 +942,8 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
     // we have one file selected
     if (data != null && data.getData() != null) {
       if (resultCode == RESULT_OK && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        return WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+        return filterUnsafeFileChooserUris(
+                WebChromeClient.FileChooserParams.parseResult(resultCode, data));
       } else {
         return null;
       }
@@ -953,7 +956,7 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
       for (int i = 0; i < numSelectedFiles; i++) {
         result[i] = data.getClipData().getItemAt(i).getUri();
       }
-      return result;
+      return filterUnsafeFileChooserUris(result);
     }
 
     // we have a captured image or video file
@@ -963,6 +966,47 @@ public class InAppWebViewChromeClient extends WebChromeClient implements PluginR
     }
 
     return null;
+  }
+
+  /**
+   * Rejects untrusted file-picker URIs that could expose the host app's private files.
+   * Non-file URIs remain allowed because content providers are the normal picker path.
+   */
+  private boolean isUnsafeFileChooserUri(@Nullable Uri uri) {
+    if (uri == null) {
+      return true;
+    }
+    if (!"file".equalsIgnoreCase(uri.getScheme())) {
+      return false;
+    }
+
+    final Activity activity = getActivity();
+    if (activity == null) {
+      return true;
+    }
+    return FileChooserUriSanitizer.isUnsafeFilePath(
+            uri.getPath(), activity.getApplicationInfo().dataDir);
+  }
+
+  @Nullable
+  private Uri sanitizeFileChooserUri(@Nullable Uri uri) {
+    return isUnsafeFileChooserUri(uri) ? null : uri;
+  }
+
+  @Nullable
+  private Uri[] filterUnsafeFileChooserUris(@Nullable Uri[] uris) {
+    if (uris == null) {
+      return null;
+    }
+
+    final List<Uri> safeUris = new ArrayList<>();
+    for (Uri uri : uris) {
+      final Uri safeUri = sanitizeFileChooserUri(uri);
+      if (safeUri != null) {
+        safeUris.add(safeUri);
+      }
+    }
+    return safeUris.isEmpty() ? null : safeUris.toArray(new Uri[0]);
   }
 
   private boolean isFileNotEmpty(Uri uri) {
