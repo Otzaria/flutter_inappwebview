@@ -1283,8 +1283,22 @@ void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
     // === Priority 1: Try EGL image import (zero-copy, best performance) ===
     // Only attempt EGL for DMA-BUF buffers (SHM buffers cannot be imported via EGL)
     // Skip if previous EGL attempts failed
-    if (egl_display_ != nullptr && 
-        is_dma_buf && !egl_import_failed_permanently) {
+    // WPE's generic DMA-BUF -> EGLImage import can succeed while the
+    // resulting Flutter texture remains black on modifier-aware buffers
+    // (observed with Intel/Wayland). In that situation the successful import
+    // incorrectly marks the frame as handled and prevents the reliable
+    // wpe_buffer_import_to_pixels() fallback below from running.
+    //
+    // Prefer the compatible pixel-import path by default. Applications that
+    // have verified zero-copy EGL DMA-BUF presentation on their platform may
+    // explicitly opt in.
+    const bool enable_egl_dmabuf =
+        g_getenv("FLUTTER_INAPPWEBVIEW_WPE_ENABLE_EGL_DMABUF") != nullptr;
+
+    if (enable_egl_dmabuf &&
+        egl_display_ != nullptr &&
+        is_dma_buf &&
+        !egl_import_failed_permanently) {
       GError* error = nullptr;
       void* egl_image = wpe_buffer_import_to_egl_image(buffer, &error);
       
