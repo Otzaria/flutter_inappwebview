@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Fixed `callAsyncJavaScript` with arguments on iOS versions below 14.3.
 - Updated flutter_inappwebview_platform_interface version to ^1.4.0-beta.3
 - Implemented `saveState`, `restoreState` InAppWebViewController methods
 - Implemented `PlatformProxyController` class
