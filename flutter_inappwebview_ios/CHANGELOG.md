@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Prevented `evaluateJavascript` crashes in popup WebViews on iOS 14 through 17.
 - Restored scroll insets after dismissing the keyboard on iOS 17.2 and later.
 - Fixed IIFE evaluation in named content worlds when the print bridge is active.
 - Fixed `callAsyncJavaScript` with arguments on iOS versions below 14.3.
