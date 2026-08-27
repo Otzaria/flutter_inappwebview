@@ -314,7 +314,9 @@ public class InAppWebView: WKWebView, WKUIDelegate,
             }
             
             if #available(macOS 11.3, *) {
-                configuration.upgradeKnownHostsToHTTPS = settings.upgradeKnownHostsToHTTPS
+                if configuration.responds(to: NSSelectorFromString("setUpgradeKnownHostsToHTTPS:")) {
+                    configuration.upgradeKnownHostsToHTTPS = settings.upgradeKnownHostsToHTTPS
+                }
             }
         }
         
@@ -759,7 +761,9 @@ public class InAppWebView: WKWebView, WKUIDelegate,
         }
         
         if #available(macOS 11.3, *) {
-            if newSettingsMap["upgradeKnownHostsToHTTPS"] != nil && settings?.upgradeKnownHostsToHTTPS != newSettings.upgradeKnownHostsToHTTPS {
+            if newSettingsMap["upgradeKnownHostsToHTTPS"] != nil &&
+                settings?.upgradeKnownHostsToHTTPS != newSettings.upgradeKnownHostsToHTTPS &&
+                configuration.responds(to: NSSelectorFromString("setUpgradeKnownHostsToHTTPS:")) {
                 configuration.upgradeKnownHostsToHTTPS = newSettings.upgradeKnownHostsToHTTPS
             }
             if newSettingsMap["isTextInteractionEnabled"] != nil && settings?.isTextInteractionEnabled != newSettings.isTextInteractionEnabled {

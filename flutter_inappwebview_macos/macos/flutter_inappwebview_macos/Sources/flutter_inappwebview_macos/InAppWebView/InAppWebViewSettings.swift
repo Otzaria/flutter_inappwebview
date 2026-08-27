@@ -110,7 +110,9 @@ public class InAppWebViewSettings: ISettings<InAppWebView> {
             }
             if #available(macOS 11.3, *) {
                 realSettings["isTextInteractionEnabled"] = configuration.preferences.isTextInteractionEnabled
-                realSettings["upgradeKnownHostsToHTTPS"] = configuration.upgradeKnownHostsToHTTPS
+                if configuration.responds(to: NSSelectorFromString("upgradeKnownHostsToHTTPS")) {
+                    realSettings["upgradeKnownHostsToHTTPS"] = configuration.upgradeKnownHostsToHTTPS
+                }
             }
             if #available(macOS 12.0, *) {
                 realSettings["underPageBackgroundColor"] = webView.underPageBackgroundColor.hexString
