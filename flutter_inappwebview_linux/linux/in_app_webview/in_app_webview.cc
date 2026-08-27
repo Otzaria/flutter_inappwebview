@@ -3298,8 +3298,28 @@ void InAppWebView::SetPointerButton(int kind, int button, int clickCount) {
 }
 
 void InAppWebView::SetScrollDelta(double dx, double dy) {
-  // Hide all popups when scrolling
+  // Preserve the existing behavior even when every scroll axis is suppressed.
   HideAllPopups();
+
+  // There is no native scroll view to disable here — WPE renders offscreen and
+  // Flutter forwards the wheel/trackpad delta straight through — so an axis the
+  // embedder disabled is dropped before the event is built. Reading the current
+  // settings (rather than a cached copy) keeps a later setSettings() call live.
+  if (settings_ != nullptr &&
+      (settings_->disableHorizontalScroll || settings_->disableVerticalScroll)) {
+    if (settings_->disableHorizontalScroll) {
+      dx = 0;
+    }
+    if (settings_->disableVerticalScroll) {
+      dy = 0;
+    }
+    // Every axis the gesture carried was suppressed: swallow it entirely so the
+    // page sees no scroll event at all, the way a disabled platform scroller
+    // would behave.
+    if (dx == 0 && dy == 0) {
+      return;
+    }
+  }
 
 #ifdef HAVE_WPE_PLATFORM
   if (wpe_view_ == nullptr)

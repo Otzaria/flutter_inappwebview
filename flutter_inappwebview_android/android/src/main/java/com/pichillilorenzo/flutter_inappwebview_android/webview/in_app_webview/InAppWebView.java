@@ -142,6 +142,8 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
   public InAppWebViewSettings customSettings = new InAppWebViewSettings();
   public boolean isLoading = false;
   private boolean inFullscreen = false;
+  @Nullable
+  private Integer customBackgroundColor;
   public float zoomScale = 1.0f;
   public ContentBlockerHandler contentBlockerHandler = new ContentBlockerHandler();
   @Nullable
@@ -151,7 +153,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
   @Nullable
   public Map<String, Object> contextMenu = null;
   public Handler mainLooperHandler = new Handler(getWebViewLooper());
-  static Handler mHandler = new Handler();
+  static Handler mHandler = new Handler(Looper.getMainLooper());
 
   public Runnable checkScrollStoppedTask;
   public int initialPositionScrollStoppedTask;
@@ -337,7 +339,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     if (customSettings.clearCache)
       clearAllCache();
     else if (customSettings.clearSessionCache)
-      CookieManager.getInstance().removeSessionCookie();
+      clearSessionCookies();
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
       CookieManager.getInstance().setAcceptThirdPartyCookies(this, customSettings.thirdPartyCookiesEnabled);
@@ -636,6 +638,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     this.userContentController.addUserOnlyScripts(this.initialUserOnlyScripts);
   }
 
+  @SuppressWarnings("deprecation")
   public void setIncognito(boolean enabled) {
     WebSettings settings = getSettings();
     if (enabled) {
@@ -727,6 +730,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
    * @deprecated
    */
   @Deprecated
+  @SuppressWarnings("deprecation")
   private void clearCookies() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       CookieManager.getInstance().removeAllCookies(new ValueCallback<Boolean>() {
@@ -738,6 +742,18 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     } else {
       CookieManager.getInstance().removeAllCookie();
     }
+  }
+
+  @SuppressWarnings("deprecation")
+  private void clearSessionCookies() {
+    // This deprecated call is intentionally synchronous. The modern API is
+    // asynchronous and can race the initial navigation with stale cookies.
+    CookieManager.getInstance().removeSessionCookie();
+  }
+
+  public void setCustomBackgroundColor(int color) {
+    customBackgroundColor = color;
+    setBackgroundColor(color);
   }
 
   /**
@@ -919,7 +935,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     if (newSettingsMap.get("clearCache") != null && newCustomSettings.clearCache)
       clearAllCache();
     else if (newSettingsMap.get("clearSessionCache") != null && newCustomSettings.clearSessionCache)
-      CookieManager.getInstance().removeSessionCookie();
+      clearSessionCookies();
 
     if (newSettingsMap.get("thirdPartyCookiesEnabled") != null && customSettings.thirdPartyCookiesEnabled != newCustomSettings.thirdPartyCookiesEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
       CookieManager.getInstance().setAcceptThirdPartyCookies(this, newCustomSettings.thirdPartyCookiesEnabled);
@@ -943,7 +959,7 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
       if (newCustomSettings.transparentBackground) {
         setBackgroundColor(Color.TRANSPARENT);
       } else {
-        setBackgroundColor(Color.parseColor("#FFFFFF"));
+        setBackgroundColor(customBackgroundColor != null ? customBackgroundColor : Color.WHITE);
       }
     }
 

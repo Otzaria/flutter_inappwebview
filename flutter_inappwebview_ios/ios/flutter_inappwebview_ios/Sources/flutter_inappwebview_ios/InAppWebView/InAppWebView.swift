@@ -106,23 +106,29 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
         }
         set {
             super.frame = newValue
-            
-            scrollView.contentInset = .zero
-            if #available(iOS 11, *) {
-                // Above iOS 11, adjust contentInset to compensate the adjustedContentInset so the sum will
-                // always be 0.
-                if (scrollView.adjustedContentInset != .zero) {
-                    let insetToAdjust = scrollView.adjustedContentInset
-                    scrollView.contentInset = UIEdgeInsets(top: -insetToAdjust.top, left: -insetToAdjust.left,
-                                                           bottom: -insetToAdjust.bottom, right: -insetToAdjust.right)
-                }
+            restoreScrollViewContentInsetCompensation()
+        }
+    }
+
+    private func restoreScrollViewContentInsetCompensation() {
+        scrollView.contentInset = .zero
+        if #available(iOS 11, *) {
+            // Compensate adjustedContentInset so the effective inset remains zero.
+            if scrollView.adjustedContentInset != .zero {
+                let insetToAdjust = scrollView.adjustedContentInset
+                scrollView.contentInset = UIEdgeInsets(top: -insetToAdjust.top, left: -insetToAdjust.left,
+                                                       bottom: -insetToAdjust.bottom, right: -insetToAdjust.right)
             }
         }
     }
-    
+
     // Fix https://github.com/pichillilorenzo/flutter_inappwebview/issues/1947
     private var _scrollViewContentInsetAdjusted = false
+    private var _keyboardInsetGeneration: UInt = 0
+    private var _pendingKeyboardHideGeneration: UInt?
     @objc func keyboardWillShow(notification: NSNotification) {
+        _keyboardInsetGeneration &+= 1
+        _pendingKeyboardHideGeneration = nil
         // UIResponder.keyboardWillShowNotification will be fired also
         // when changing focus between HTML inputs with the keyboard already open
         if (scrollView.adjustedContentInset != .zero) {
@@ -143,6 +149,16 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
     }
     @objc func keyboardWillHide(notification: NSNotification) {
         _scrollViewContentInsetAdjusted = false
+        _keyboardInsetGeneration &+= 1
+        _pendingKeyboardHideGeneration = _keyboardInsetGeneration
+    }
+    @objc func keyboardDidHide(notification: NSNotification) {
+        guard let hideGeneration = _pendingKeyboardHideGeneration,
+              hideGeneration == _keyboardInsetGeneration else {
+            return
+        }
+        _pendingKeyboardHideGeneration = nil
+        restoreScrollViewContentInsetCompensation()
     }
     
     required public init(coder aDecoder: NSCoder) {
@@ -382,6 +398,9 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
                                                    object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide(notification:)),
                                                    name: UIResponder.keyboardWillHideNotification,
+                                                   object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidHide(notification:)),
+                                                   name: UIResponder.keyboardDidHideNotification,
                                                    object: nil)
         }
         
@@ -1509,6 +1528,11 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
     
     @available(iOS 14.0, *)
     public func injectDeferredObject(source: String, contentWorld: WKContentWorld, withWrapper jsWrapper: String?, completionHandler: ((Any?) -> Void)? = nil) {
+        if #unavailable(iOS 18.0), windowId != nil, contentWorld != WKContentWorld.page {
+            channelDelegate?.onConsoleMessage(message: popupContentWorldUnavailableError().localizedDescription, messageLevel: 3)
+            completionHandler?(nil)
+            return
+        }
         var jsToInject = source
         if let wrapper = jsWrapper {
             let jsonData: Data? = try? JSONSerialization.data(withJSONObject: [source], options: [])
@@ -1568,6 +1592,26 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
         if let applePayAPIEnabled = settings?.applePayAPIEnabled, applePayAPIEnabled {
             return
         }
+        // Popup WebViews share their parent's configuration. On iOS 14-17 the
+        // content-world overload can crash for those WebViews. The legacy overload
+        // is equivalent only for the top-level page world; named worlds and frames
+        // must fail closed instead of leaking evaluation into the page world.
+        if #unavailable(iOS 18.0), windowId != nil {
+            if contentWorld == WKContentWorld.page, frame == nil {
+                super.evaluateJavaScript(javaScript) { result, error in
+                    if let error = error {
+                        completionHandler?(.failure(error))
+                    } else if let result = result {
+                        completionHandler?(.success(result))
+                    } else {
+                        completionHandler?(.success(NSNull()))
+                    }
+                }
+            } else {
+                completionHandler?(.failure(popupContentWorldUnavailableError()))
+            }
+            return
+        }
         super.evaluateJavaScript(javaScript, in: frame, in: contentWorld, completionHandler: completionHandler)
     }
     
@@ -1577,6 +1621,15 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
     
     @available(iOS 14.0, *)
     public func evaluateJavascript(source: String, contentWorld: WKContentWorld, completionHandler: ((Any?) -> Void)? = nil) {
+        if #unavailable(iOS 18.0), windowId != nil {
+            guard contentWorld == WKContentWorld.page else {
+                channelDelegate?.onConsoleMessage(message: popupContentWorldUnavailableError().localizedDescription, messageLevel: 3)
+                completionHandler?(nil)
+                return
+            }
+            injectDeferredObject(source: source, withWrapper: nil, completionHandler: completionHandler)
+            return
+        }
         injectDeferredObject(source: source, contentWorld: contentWorld, withWrapper: nil, completionHandler: completionHandler)
     }
     
@@ -1585,11 +1638,28 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
         if let applePayAPIEnabled = settings?.applePayAPIEnabled, applePayAPIEnabled {
             return
         }
+        if #unavailable(iOS 18.0), windowId != nil {
+            completionHandler?(.failure(popupContentWorldUnavailableError()))
+            return
+        }
         super.callAsyncJavaScript(functionBody, arguments: arguments, in: frame, in: contentWorld, completionHandler: completionHandler)
     }
-    
+
     @available(iOS 14.0, *)
     public func callAsyncJavaScript(functionBody: String, arguments: [String:Any], contentWorld: WKContentWorld, completionHandler: ((Any?) -> Void)? = nil) {
+        if #unavailable(iOS 18.0), windowId != nil {
+            if contentWorld == WKContentWorld.page {
+                callAsyncJavaScript(functionBody: functionBody, arguments: arguments, completionHandler: completionHandler)
+            } else {
+                let error = popupContentWorldUnavailableError()
+                channelDelegate?.onConsoleMessage(message: error.localizedDescription, messageLevel: 3)
+                completionHandler?([
+                    "value": nil,
+                    "error": error.localizedDescription
+                ])
+            }
+            return
+        }
         let jsToInject = configuration.userContentController.generateCodeForScriptEvaluation(scriptMessageHandler: self, source: functionBody, contentWorld: contentWorld)
         
         callAsyncJavaScript(jsToInject, arguments: arguments, frame: nil, contentWorld: contentWorld) { (evalResult) in
@@ -1617,6 +1687,16 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
             
             completionHandler(body)
         }
+    }
+
+    private func popupContentWorldUnavailableError() -> NSError {
+        return NSError(
+            domain: "flutter_inappwebview",
+            code: 1,
+            userInfo: [
+                NSLocalizedDescriptionKey: "Content-world JavaScript evaluation is unavailable in popup WebViews on iOS 14 through 17."
+            ]
+        )
     }
     
     @available(iOS 10.3, *)
