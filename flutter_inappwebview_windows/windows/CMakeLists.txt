@@ -364,7 +364,9 @@ apply_standard_settings(${TEST_RUNNER})
 target_include_directories(${TEST_RUNNER} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(${TEST_RUNNER} PRIVATE flutter flutter_wrapper_plugin gtest_main)
 
-# Enable automatic test discovery.
+# Enable automatic test discovery. The default 5s DISCOVERY_TIMEOUT is
+# marginal on cold CI runners (antivirus scans the fresh executable) and
+# was observed killing --gtest_list_tests mid-print.
 include(GoogleTest)
-gtest_discover_tests(${TEST_RUNNER})
+gtest_discover_tests(${TEST_RUNNER} DISCOVERY_TIMEOUT 60)
 endif()
