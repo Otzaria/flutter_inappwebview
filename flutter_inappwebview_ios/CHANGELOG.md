@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Restored scroll insets after dismissing the keyboard on iOS 17.2 and later.
 - Fixed IIFE evaluation in named content worlds when the print bridge is active.
 - Fixed `callAsyncJavaScript` with arguments on iOS versions below 14.3.
 - Updated flutter_inappwebview_platform_interface version to ^1.4.0-beta.3

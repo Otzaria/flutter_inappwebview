@@ -106,23 +106,29 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
         }
         set {
             super.frame = newValue
-            
-            scrollView.contentInset = .zero
-            if #available(iOS 11, *) {
-                // Above iOS 11, adjust contentInset to compensate the adjustedContentInset so the sum will
-                // always be 0.
-                if (scrollView.adjustedContentInset != .zero) {
-                    let insetToAdjust = scrollView.adjustedContentInset
-                    scrollView.contentInset = UIEdgeInsets(top: -insetToAdjust.top, left: -insetToAdjust.left,
-                                                           bottom: -insetToAdjust.bottom, right: -insetToAdjust.right)
-                }
+            restoreScrollViewContentInsetCompensation()
+        }
+    }
+
+    private func restoreScrollViewContentInsetCompensation() {
+        scrollView.contentInset = .zero
+        if #available(iOS 11, *) {
+            // Compensate adjustedContentInset so the effective inset remains zero.
+            if scrollView.adjustedContentInset != .zero {
+                let insetToAdjust = scrollView.adjustedContentInset
+                scrollView.contentInset = UIEdgeInsets(top: -insetToAdjust.top, left: -insetToAdjust.left,
+                                                       bottom: -insetToAdjust.bottom, right: -insetToAdjust.right)
             }
         }
     }
-    
+
     // Fix https://github.com/pichillilorenzo/flutter_inappwebview/issues/1947
     private var _scrollViewContentInsetAdjusted = false
+    private var _keyboardInsetGeneration: UInt = 0
+    private var _pendingKeyboardHideGeneration: UInt?
     @objc func keyboardWillShow(notification: NSNotification) {
+        _keyboardInsetGeneration &+= 1
+        _pendingKeyboardHideGeneration = nil
         // UIResponder.keyboardWillShowNotification will be fired also
         // when changing focus between HTML inputs with the keyboard already open
         if (scrollView.adjustedContentInset != .zero) {
@@ -143,6 +149,16 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
     }
     @objc func keyboardWillHide(notification: NSNotification) {
         _scrollViewContentInsetAdjusted = false
+        _keyboardInsetGeneration &+= 1
+        _pendingKeyboardHideGeneration = _keyboardInsetGeneration
+    }
+    @objc func keyboardDidHide(notification: NSNotification) {
+        guard let hideGeneration = _pendingKeyboardHideGeneration,
+              hideGeneration == _keyboardInsetGeneration else {
+            return
+        }
+        _pendingKeyboardHideGeneration = nil
+        restoreScrollViewContentInsetCompensation()
     }
     
     required public init(coder aDecoder: NSCoder) {
@@ -382,6 +398,9 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
                                                    object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide(notification:)),
                                                    name: UIResponder.keyboardWillHideNotification,
+                                                   object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidHide(notification:)),
+                                                   name: UIResponder.keyboardDidHideNotification,
                                                    object: nil)
         }
         
