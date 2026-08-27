@@ -1,5 +1,7 @@
 ## 1.4.0-beta.3
 
+- Added the Windows `PERSISTENT_STORAGE` permission resource and safe handling
+  for permission kinds introduced by newer WebView2 runtimes.
 - Updated `flutter_inappwebview_internal_annotations` dependency from `^1.2.0` to `^1.3.0`
 - Added `isClassSupported`, `isPropertySupported`, `isMethodSupported` static methods for all main classes, such as `PlatformInAppWebViewController`, `InAppWebViewSettings`, `PlatformInAppBrowser`, etc., in order to check if a class, property, or method is supported by the platform at runtime
 - Added `isSupported` method to all custom enum classes
