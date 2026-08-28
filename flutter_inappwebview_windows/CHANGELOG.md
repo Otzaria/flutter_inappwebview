@@ -6,6 +6,9 @@
 - Updated Microsoft.Windows.ImplementationLibrary to `1.0.260126.7` and
   Microsoft.Web.WebView2 to `1.0.4078.44` for current MSVC toolchains.
 - Fixed internal WebView host windows stealing focus from the Flutter window.
+- Fixed owned popups (`<select>` dropdowns, print preview pickers, context
+  menus) opening away from the WebView after the host windows became
+  `WS_CHILD`: positioning now uses parent-client coordinates.
 - Added profile-scoped WebView2 preferred color-scheme control.
 - Updated flutter_inappwebview_platform_interface version to ^1.4.0-beta.3
 - Updated Microsoft.Web.WebView2 SDK version from `1.0.2849.39` to `1.0.3650.58`
