@@ -8,6 +8,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import '../platform_util.dart';
 import '_static_channel.dart';
+import 'webview_creation_failure.dart';
 
 const Map<String, SystemMouseCursor> _cursors = {
   'none': SystemMouseCursors.none,
@@ -151,12 +152,13 @@ class CustomPlatformViewController
         'createInAppWebView',
         arguments,
       ))!;
-    } catch (_) {
+    } catch (error, stackTrace) {
       // No native view exists; release waiters and prevent channel calls.
       _isDisposed = true;
       if (!_creatingCompleter.isCompleted) {
         _creatingCompleter.complete();
       }
+      WindowsWebViewCreationFailures.report(error, stackTrace);
       rethrow;
     }
 
@@ -392,14 +394,20 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
 
     _platformUtil.addListener(this);
 
-    _controller.initialize(
-      onPlatformViewCreated: (id) {
-        if (!mounted) return;
-        widget.onPlatformViewCreated?.call(id);
-        setState(() {});
-      },
-      arguments: widget.creationParams,
-    );
+    // `initialize` reports native creation failures through
+    // WindowsWebViewCreationFailures, then rethrows for direct callers. This
+    // widget has no per-instance creation-error callback, so consume that
+    // rethrown Future here instead of producing an unhandled async error.
+    _controller
+        .initialize(
+          onPlatformViewCreated: (id) {
+            if (!mounted) return;
+            widget.onPlatformViewCreated?.call(id);
+            setState(() {});
+          },
+          arguments: widget.creationParams,
+        )
+        .ignore();
 
     _listener = AppLifecycleListener(
       onStateChange: (state) {
