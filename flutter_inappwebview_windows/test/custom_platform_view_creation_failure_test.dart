@@ -205,4 +205,58 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('creation failures carry the failed widget key', (tester) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(IN_APP_WEBVIEW_STATIC_CHANNEL, (call) async {
+          pluginChannelCalls.add(call);
+          final arguments = call.arguments! as Map<dynamic, dynamic>;
+          if (arguments['creation'] == 'fails') {
+            throw PlatformException(code: '0', message: 'creation failed');
+          }
+          return 1;
+        });
+    final failures = <WindowsWebViewCreationFailure>[];
+    final subscription = WindowsWebViewCreationFailures.stream.listen(
+      failures.add,
+    );
+    addTearDown(subscription.cancel);
+    const failedKey = ValueKey<String>('failed');
+    const succeededKey = ValueKey<String>('succeeded');
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Row(
+          children: [
+            Expanded(
+              child: CustomPlatformView(
+                creationKey: failedKey,
+                creationParams: const {
+                  'creation': 'fails',
+                  'initialUrlRequest': {'url': 'file:///plugins/a/index.html'},
+                },
+              ),
+            ),
+            Expanded(
+              child: CustomPlatformView(
+                creationKey: succeededKey,
+                creationParams: const {
+                  'creation': 'succeeds',
+                  'initialUrlRequest': {'url': 'file:///plugins/a/index.html'},
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(failures, hasLength(1));
+    expect(failures.single.requestedUrl, 'file:///plugins/a/index.html');
+    expect(failures.single.creationKey, failedKey);
+    expect(tester.takeException(), isNull);
+  });
 }

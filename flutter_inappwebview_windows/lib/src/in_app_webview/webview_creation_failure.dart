@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
+
 /// A native WebView creation failure, as reported by the Windows plugin.
 class WindowsWebViewCreationFailure {
   /// The error thrown by the `createInAppWebView` platform call. On Windows it
@@ -8,10 +10,29 @@ class WindowsWebViewCreationFailure {
 
   final StackTrace stackTrace;
 
-  const WindowsWebViewCreationFailure(this.error, this.stackTrace);
+  /// The URL (or file path) the failed webview was asked to load, taken from
+  /// its creation params. Hosts use it to tell whose creation failed: several
+  /// webviews can be created concurrently and this stream is global.
+  final String? requestedUrl;
+
+  /// The [InAppWebView] key for the failed creation attempt.
+  ///
+  /// URLs are not unique: multiple WebViews can create the same URL at once.
+  /// Use this field to match a failure to the right widget. Supply a distinct
+  /// key to each concurrently-created WebView.
+  final Key? creationKey;
+
+  const WindowsWebViewCreationFailure(
+    this.error,
+    this.stackTrace, {
+    this.requestedUrl,
+    this.creationKey,
+  });
 
   @override
-  String toString() => 'WindowsWebViewCreationFailure($error)';
+  String toString() =>
+      'WindowsWebViewCreationFailure('
+      '$error, requestedUrl: $requestedUrl, creationKey: $creationKey)';
 }
 
 /// Broadcasts native WebView creation failures to the host application.
@@ -27,9 +48,25 @@ class WindowsWebViewCreationFailures {
 
   static Stream<WindowsWebViewCreationFailure> get stream => _controller.stream;
 
-  static void report(Object error, StackTrace stackTrace) {
+  static void report(
+    Object error,
+    StackTrace stackTrace, {
+    String? requestedUrl,
+    Key? creationKey,
+  }) {
+    reportFailure(
+      WindowsWebViewCreationFailure(
+        error,
+        stackTrace,
+        requestedUrl: requestedUrl,
+        creationKey: creationKey,
+      ),
+    );
+  }
+
+  static void reportFailure(WindowsWebViewCreationFailure failure) {
     if (_controller.hasListener) {
-      _controller.add(WindowsWebViewCreationFailure(error, stackTrace));
+      _controller.add(failure);
     }
   }
 }

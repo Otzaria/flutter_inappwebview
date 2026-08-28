@@ -117,6 +117,20 @@ class CustomFlutterViewControllerValue {
   CustomFlutterViewControllerValue.uninitialized() : this(isInitialized: false);
 }
 
+/// The URL a creation request was going to load, read back from its creation
+/// params. It is the only identifier both sides share before the webview
+/// exists, so it is what lets a host match a failure to its own request.
+String? _requestedUrlOf(dynamic arguments) {
+  if (arguments is! Map) return null;
+  final urlRequest = arguments['initialUrlRequest'];
+  if (urlRequest is Map) {
+    final url = urlRequest['url'];
+    if (url != null) return url.toString();
+  }
+  final file = arguments['initialFile'];
+  return file?.toString();
+}
+
 /// Controls a WebView and provides streams for various change events.
 class CustomPlatformViewController
     extends ValueNotifier<CustomFlutterViewControllerValue> {
@@ -142,6 +156,7 @@ class CustomPlatformViewController
   /// Initializes the underlying platform view.
   Future<void> initialize({
     Function(int id)? onPlatformViewCreated,
+    Key? creationKey,
     dynamic arguments,
   }) async {
     if (_isDisposed) {
@@ -158,7 +173,13 @@ class CustomPlatformViewController
       if (!_creatingCompleter.isCompleted) {
         _creatingCompleter.complete();
       }
-      WindowsWebViewCreationFailures.report(error, stackTrace);
+      final failure = WindowsWebViewCreationFailure(
+        error,
+        stackTrace,
+        requestedUrl: _requestedUrlOf(arguments),
+        creationKey: creationKey,
+      );
+      WindowsWebViewCreationFailures.reportFailure(failure);
       rethrow;
     }
 
@@ -330,9 +351,17 @@ class CustomPlatformView extends StatefulWidget {
 
   final Function(int id)? onPlatformViewCreated;
 
+  /// The caller-supplied key that identifies this creation attempt.
+  ///
+  /// It is carried on [WindowsWebViewCreationFailure] so listeners on the
+  /// global failure stream can identify the failed widget even when multiple
+  /// WebViews request the same URL.
+  final Key? creationKey;
+
   const CustomPlatformView({
     this.creationParams,
     this.onPlatformViewCreated,
+    this.creationKey,
     this.scaleFactor,
     this.filterQuality = FilterQuality.none,
   });
@@ -405,6 +434,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
             widget.onPlatformViewCreated?.call(id);
             setState(() {});
           },
+          creationKey: widget.creationKey,
           arguments: widget.creationParams,
         )
         .ignore();
