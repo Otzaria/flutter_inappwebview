@@ -1,5 +1,8 @@
 ## 0.7.0-beta.3
 
+- Fixed reversed horizontal scrolling: two-finger trackpad pans and mouse
+  tilt-wheel scrolls moved the content in the opposite direction, because
+  `WM_MOUSEHWHEEL`'s sign convention is inverted relative to `WM_MOUSEWHEEL`.
 - Fixed WebView2 input windows intercepting desktop clicks while the Flutter
   host window is minimized, including WebViews created or resumed during
   minimization.
