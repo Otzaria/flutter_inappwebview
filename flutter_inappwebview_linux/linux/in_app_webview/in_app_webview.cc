@@ -2473,6 +2473,68 @@ void InAppWebView::takeScreenshot(std::function<void(const std::optional<std::ve
   callback(png_data);
 }
 
+// === PDF export (Otzaria WPE runtime patch) ===
+
+namespace {
+
+typedef void (*OtzariaPrintToPdfFn)(WebKitWebView*, double, double, double, double,
+                                    double, double, GCancellable*, GAsyncReadyCallback, gpointer);
+typedef GBytes* (*OtzariaPrintToPdfFinishFn)(WebKitWebView*, GAsyncResult*, GError**);
+
+struct CreatePdfCall {
+  std::function<void(const std::optional<std::vector<uint8_t>>&)> callback;
+  OtzariaPrintToPdfFinishFn finish;
+};
+
+}  // namespace
+
+void InAppWebView::createPdf(double pageWidthPt, double pageHeightPt,
+                             double marginTopPt, double marginRightPt,
+                             double marginBottomPt, double marginLeftPt,
+                             std::function<void(const std::optional<std::vector<uint8_t>>&)> callback) {
+  if (webview_ == nullptr || callback == nullptr) {
+    if (callback) {
+      callback(std::nullopt);
+    }
+    return;
+  }
+
+  // הסימבולים קיימים רק ב-libWPEWebKit מה-runtime המטולא של אוצריא;
+  // בבנייה רגילה dlsym מחזיר null ואנחנו מדווחים "אין תמיכה" בשקט.
+  auto print_fn = reinterpret_cast<OtzariaPrintToPdfFn>(
+      dlsym(RTLD_DEFAULT, "webkit_otzaria_web_view_print_to_pdf"));
+  auto finish_fn = reinterpret_cast<OtzariaPrintToPdfFinishFn>(
+      dlsym(RTLD_DEFAULT, "webkit_otzaria_web_view_print_to_pdf_finish"));
+  if (print_fn == nullptr || finish_fn == nullptr) {
+    callback(std::nullopt);
+    return;
+  }
+
+  auto* call = new CreatePdfCall{std::move(callback), finish_fn};
+  print_fn(
+      webview_, pageWidthPt, pageHeightPt, marginTopPt, marginRightPt, marginBottomPt,
+      marginLeftPt, nullptr,
+      [](GObject* source, GAsyncResult* result, gpointer user_data) {
+        std::unique_ptr<CreatePdfCall> call(static_cast<CreatePdfCall*>(user_data));
+        GError* error = nullptr;
+        GBytes* bytes = call->finish(WEBKIT_WEB_VIEW(source), result, &error);
+        if (error != nullptr || bytes == nullptr) {
+          if (error != nullptr) {
+            g_warning("createPdf failed: %s", error->message);
+            g_error_free(error);
+          }
+          call->callback(std::nullopt);
+          return;
+        }
+        gsize size = 0;
+        const auto* data = static_cast<const uint8_t*>(g_bytes_get_data(bytes, &size));
+        std::vector<uint8_t> pdf(data, data + size);
+        g_bytes_unref(bytes);
+        call->callback(pdf);
+      },
+      call);
+}
+
 // === Session State ===
 
 std::optional<std::vector<uint8_t>> InAppWebView::saveState() const {

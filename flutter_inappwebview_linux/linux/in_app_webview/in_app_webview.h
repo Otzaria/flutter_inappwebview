@@ -219,6 +219,14 @@ class InAppWebView {
   // Screenshot - captures the current visible content as PNG data
   void takeScreenshot(std::function<void(const std::optional<std::vector<uint8_t>>&)> callback);
 
+  // PDF export via the Otzaria WPE runtime patch (webkit_otzaria_web_view_print_to_pdf,
+  // resolved with dlsym). Sizes are in PDF points; yields nullopt when the
+  // running libWPEWebKit lacks the symbol (unpatched build).
+  void createPdf(double pageWidthPt, double pageHeightPt,
+                 double marginTopPt, double marginRightPt,
+                 double marginBottomPt, double marginLeftPt,
+                 std::function<void(const std::optional<std::vector<uint8_t>>&)> callback);
+
   // Session state - save and restore navigation state
   std::optional<std::vector<uint8_t>> saveState() const;
   bool restoreState(const std::vector<uint8_t>& stateData);
