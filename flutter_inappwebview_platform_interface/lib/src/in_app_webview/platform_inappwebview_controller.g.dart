@@ -473,6 +473,8 @@ enum PlatformInAppWebViewControllerMethod {
   ///- iOS WKWebView 14.0+ ([Official API - WKWebView.createPdf](https://developer.apple.com/documentation/webkit/wkwebview/3650490-createpdf))
   ///- macOS WKWebView 11.0+ ([Official API - WKWebView.createPdf](https://developer.apple.com/documentation/webkit/wkwebview/3650490-createpdf))
   ///- Windows WebView2 ([Official API - ICoreWebView2_16.PrintToPdfStream](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2_16#printtopdfstream))
+  ///- Linux WPE WebKit:
+  ///    - Requires the Otzaria-patched WPE runtime. With stock libWPEWebKit, this method returns null.
   ///
   ///**Parameters - Officially Supported Platforms/Implementations**:
   ///- [pdfConfiguration]: all platforms
@@ -2741,6 +2743,7 @@ extension _PlatformInAppWebViewControllerMethodSupported
               TargetPlatform.iOS,
               TargetPlatform.macOS,
               TargetPlatform.windows,
+              TargetPlatform.linux,
             ].contains(platform ?? defaultTargetPlatform);
       case PlatformInAppWebViewControllerMethod.createWebArchiveData:
         return ((kIsWeb && platform != null) || !kIsWeb) &&
