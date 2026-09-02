@@ -3241,6 +3241,10 @@ abstract class PlatformInAppWebViewController extends PlatformInterface
         apiUrl:
             'https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2_16#printtopdfstream',
       ),
+      LinuxPlatform(
+        note:
+            'Requires the Otzaria-patched WPE runtime. With stock libWPEWebKit, this method returns null.',
+      ),
     ],
   )
   Future<Uint8List?> createPdf({
