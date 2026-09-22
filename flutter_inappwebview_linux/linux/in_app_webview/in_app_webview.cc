@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -67,6 +68,7 @@
 #include "../flutter_inappwebview_linux_plugin_private.h"
 #include "../plugin_instance.h"
 #include "../utils/flutter.h"
+#include "../utils/gdk_scale.h"
 #include "../utils/gl_context.h"
 #include "../utils/log.h"
 #include "../utils/uri.h"
@@ -2816,6 +2818,13 @@ void InAppWebView::setSize(int width, int height) {
 }
 
 void InAppWebView::setScaleFactor(double scale_factor) {
+  // GTK3 exposes only integer widget scaling to Flutter on Wayland. Apps that
+  // deliberately render at a higher integer GDK_SCALE need WPE's offscreen
+  // backing buffer to use the same scale, otherwise the compositor upscales a
+  // low-resolution texture. Respect an explicit GDK_SCALE when it is larger
+  // than the scale reported by Flutter.
+  scale_factor = EffectiveWpeScale(scale_factor, std::getenv("GDK_SCALE"));
+
   if (scale_factor == scale_factor_)
     return;
   scale_factor_ = scale_factor;
