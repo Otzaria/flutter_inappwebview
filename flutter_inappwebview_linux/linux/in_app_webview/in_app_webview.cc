@@ -260,6 +260,7 @@ InAppWebView::InAppWebView(FlPluginRegistrar* registrar, FlBinaryMessenger* mess
   // This helps WPE synchronize frame production with the display
   SetupMonitorChangeHandlers();
   UpdateMonitorRefreshRate();
+  ConnectHostWindowDestroyHandler();
 
   if (settings_) {
     settings_->applyToWebView(webview_);
@@ -364,6 +365,7 @@ void InAppWebView::AttachChannel(FlBinaryMessenger* messenger, const std::string
 InAppWebView::~InAppWebView() {
   debugLog("dealloc InAppWebView");
 
+  DisconnectHostWindowDestroyHandler();
   CleanupMonitorChangeHandlers();
 
   context_menu_popup_.reset();
@@ -1201,6 +1203,128 @@ void InAppWebView::UpdateMonitorRefreshRate() {
     }
   }
 #endif
+}
+
+void InAppWebView::SetHostView(GtkWindow* window, FlView* fl_view) {
+  // No window: back to the one cached at plugin registration (the main view).
+  if (window == nullptr && plugin_ != nullptr) {
+    window = plugin_->gtkWindow();
+    fl_view = plugin_->flView();
+  }
+  if (fl_view != nullptr) {
+    fl_view_ = fl_view;
+  }
+  if (window == nullptr || window == gtk_window_) {
+    return;
+  }
+
+  // Popups are parented to the previous window; drop them so the next use
+  // recreates them against the new one.
+  HideAllPopups();
+  option_menu_popup_.reset();
+  context_menu_popup_.reset();
+
+#ifdef HAVE_WPE_PLATFORM
+  if (gtk_window_ != nullptr && scale_changed_handler_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, scale_changed_handler_);
+    scale_changed_handler_ = 0;
+  }
+#endif
+  if (gtk_window_ != nullptr && configure_event_handler_id_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, configure_event_handler_id_);
+    configure_event_handler_id_ = 0;
+  }
+  DisconnectHostWindowDestroyHandler();
+
+  gtk_window_ = window;
+  ConnectHostWindowDestroyHandler();
+
+#ifdef HAVE_WPE_PLATFORM
+  // Same scale tracking as at creation: the new window may be on a monitor
+  // with a different scale factor.
+  int gtk_scale = gtk_widget_get_scale_factor(GTK_WIDGET(gtk_window_));
+  if (gtk_scale > 0 && static_cast<double>(gtk_scale) != scale_factor_) {
+    scale_factor_ = static_cast<double>(gtk_scale);
+    if (wpe_toplevel_ != nullptr) {
+      wpe_toplevel_scale_changed(wpe_toplevel_, scale_factor_);
+    }
+    if (on_frame_available_) {
+      on_frame_available_();
+    }
+  }
+  scale_changed_handler_ = g_signal_connect(gtk_window_, "notify::scale-factor",
+      G_CALLBACK(+[](GObject* object, GParamSpec* pspec, gpointer user_data) {
+        auto* self = static_cast<InAppWebView*>(user_data);
+        int new_scale = gtk_widget_get_scale_factor(GTK_WIDGET(object));
+        if (new_scale > 0 && static_cast<double>(new_scale) != self->scale_factor_) {
+          self->scale_factor_ = static_cast<double>(new_scale);
+          if (self->wpe_toplevel_ != nullptr) {
+            wpe_toplevel_scale_changed(self->wpe_toplevel_, self->scale_factor_);
+          }
+          if (self->on_frame_available_) {
+            self->on_frame_available_();
+          }
+        }
+      }), this);
+#endif
+
+  configure_event_handler_id_ = g_signal_connect(
+      gtk_window_, "configure-event",
+      G_CALLBACK(+[](GtkWidget*, GdkEventConfigure*, gpointer user_data) -> gboolean {
+        auto* self = static_cast<InAppWebView*>(user_data);
+        self->UpdateMonitorRefreshRate();
+        return FALSE;  // Continue event propagation
+      }),
+      this);
+
+  UpdateMonitorRefreshRate();
+}
+
+void InAppWebView::ConnectHostWindowDestroyHandler() {
+  if (gtk_window_ == nullptr || host_destroy_handler_id_ != 0) {
+    return;
+  }
+  host_destroy_handler_id_ = g_signal_connect(
+      gtk_window_, "destroy",
+      G_CALLBACK(+[](GtkWidget*, gpointer user_data) {
+        static_cast<InAppWebView*>(user_data)->OnHostWindowDestroyed();
+      }),
+      this);
+}
+
+void InAppWebView::DisconnectHostWindowDestroyHandler() {
+  if (gtk_window_ != nullptr && host_destroy_handler_id_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, host_destroy_handler_id_);
+  }
+  host_destroy_handler_id_ = 0;
+}
+
+void InAppWebView::OnHostWindowDestroyed() {
+  // Runs during the "destroy" emission, so the window is still a valid object
+  // and the handlers on it can be disconnected.
+  GtkWindow* fallback = plugin_ != nullptr ? plugin_->gtkWindow() : nullptr;
+  if (fallback != nullptr && fallback != gtk_window_) {
+    SetHostView(fallback, plugin_->flView());
+    return;
+  }
+
+  // The registration window itself is going away: drop everything bound to it.
+  HideAllPopups();
+  option_menu_popup_.reset();
+  context_menu_popup_.reset();
+#ifdef HAVE_WPE_PLATFORM
+  if (scale_changed_handler_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, scale_changed_handler_);
+    scale_changed_handler_ = 0;
+  }
+#endif
+  if (configure_event_handler_id_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, configure_event_handler_id_);
+    configure_event_handler_id_ = 0;
+  }
+  DisconnectHostWindowDestroyHandler();
+  gtk_window_ = nullptr;
+  fl_view_ = nullptr;
 }
 
 // === WPE Backend Callbacks ===

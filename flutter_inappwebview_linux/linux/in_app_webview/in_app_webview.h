@@ -490,6 +490,11 @@ class InAppWebView : public TextureWebViewApi {
   // Get the FlView (for focus restoration after popup dialogs)
   FlView* getFlView() const { return fl_view_; }
 
+  // Multi-window support: rehosts the webview on another window after the
+  // Flutter view showing it moved (popups, dialogs, scale and refresh rate).
+  // A null window means the window cached at plugin registration.
+  void SetHostView(GtkWindow* window, FlView* fl_view);
+
  private:
   PluginInstance* plugin_ = nullptr;  // Plugin instance for accessing managers
   FlPluginRegistrar* registrar_ = nullptr;
@@ -679,6 +684,7 @@ class InAppWebView : public TextureWebViewApi {
   // Monitor change tracking for refresh rate updates
   gulong monitors_changed_handler_id_ = 0;
   gulong configure_event_handler_id_ = 0;
+  gulong host_destroy_handler_id_ = 0;
 
   // Download signal handler ID
   gulong download_started_handler_id_ = 0;
@@ -709,6 +715,11 @@ class InAppWebView : public TextureWebViewApi {
   void PrepareAndAddUserScripts();  // Add plugin scripts based on settings
   void SetupMonitorChangeHandlers();
   void CleanupMonitorChangeHandlers();
+  // The host window is a raw pointer (no ref): when it is destroyed while the
+  // webview is still alive, fall back to the window cached at registration.
+  void ConnectHostWindowDestroyHandler();
+  void DisconnectHostWindowDestroyHandler();
+  void OnHostWindowDestroyed();
   void UpdateMonitorRefreshRate();
 
  public:
