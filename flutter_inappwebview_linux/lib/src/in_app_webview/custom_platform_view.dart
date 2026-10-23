@@ -570,10 +570,14 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     }
     // Sent even when the resolver returns null: a move back to the main view
     // must leave the previous window, which may be destroyed right after.
-    final host = resolver(viewId);
     unawaited(
       _controller.ready
-          .then((_) => mounted ? _controller._setHostView(host) : null)
+          .then((_) {
+            if (!mounted || _hostFlutterViewId != viewId) return null;
+            return _controller._setHostView(
+              LinuxWebViewHostWindow.resolver?.call(viewId),
+            );
+          })
           .catchError((Object _) {}),
     );
   }
