@@ -492,6 +492,7 @@ class InAppWebView : public TextureWebViewApi {
 
   // Multi-window support: rehosts the webview on another window after the
   // Flutter view showing it moved (popups, dialogs, scale and refresh rate).
+  // A null window means the window cached at plugin registration.
   void SetHostView(GtkWindow* window, FlView* fl_view);
 
  private:

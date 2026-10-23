@@ -150,7 +150,8 @@ typedef LinuxWebViewHostHandles = ({int windowHandle, int flutterViewHandle});
 class LinuxWebViewHostWindow {
   LinuxWebViewHostWindow._();
 
-  /// Set by the application. Returning null keeps the plugin's cached window.
+  /// Set by the application. Returning null hosts the webview on the window
+  /// cached at plugin registration (the main view).
   static LinuxWebViewHostHandles? Function(int flutterViewId)? resolver;
 }
 
@@ -435,14 +436,15 @@ class CustomPlatformViewController
   }
 
   /// Rehosts the webview on another window after it moved between windows.
-  Future<void> _setHostView(LinuxWebViewHostHandles host) async {
+  /// A null [host] means the window cached at plugin registration.
+  Future<void> _setHostView(LinuxWebViewHostHandles? host) async {
     if (_isDisposed || _creationError != null) {
       return;
     }
     assert(value.isInitialized);
     return _methodChannel.invokeMethod('setHostView', <String, dynamic>{
-      'windowHandle': host.windowHandle,
-      'flutterViewHandle': host.flutterViewHandle,
+      if (host != null) 'windowHandle': host.windowHandle,
+      if (host != null) 'flutterViewHandle': host.flutterViewHandle,
     });
   }
 }
@@ -562,16 +564,17 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     }
     // The widget was reparented into another window (e.g. a tab moved).
     _hostFlutterViewId = viewId;
-    final host = LinuxWebViewHostWindow.resolver?.call(viewId);
-    if (host == null) {
+    final resolver = LinuxWebViewHostWindow.resolver;
+    if (resolver == null) {
       return;
     }
+    // Sent even when the resolver returns null: a move back to the main view
+    // must leave the previous window, which may be destroyed right after.
+    final host = resolver(viewId);
     unawaited(
-      _controller.ready.then((_) {
-        if (mounted) {
-          _controller._setHostView(host);
-        }
-      }),
+      _controller.ready
+          .then((_) => mounted ? _controller._setHostView(host) : null)
+          .catchError((Object _) {}),
     );
   }
 

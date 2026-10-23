@@ -150,4 +150,44 @@ void main() {
       'flutterViewHandle': 2000 + secondView.viewId,
     });
   });
+
+  testWidgets(
+    'moving back to a view the resolver leaves unmapped resets the host',
+    (tester) async {
+      final secondView = _SecondTestView(tester.view);
+      // Like the main (implicit) view: only the second view is mapped.
+      LinuxWebViewHostWindow.resolver = (viewId) => viewId == secondView.viewId
+          ? (windowHandle: 1099, flutterViewHandle: 2099)
+          : null;
+      final webview = KeyedSubtree(
+        key: GlobalKey(),
+        child: const CustomPlatformView(creationParams: <String, dynamic>{}),
+      );
+
+      Widget tree({required bool inSecond}) => ViewCollection(
+        views: [
+          View(
+            view: tester.view,
+            child: inSecond ? const SizedBox.shrink() : webview,
+          ),
+          View(
+            view: secondView,
+            child: inSecond ? webview : const SizedBox.shrink(),
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(wrapWithView: false, tree(inSecond: true));
+      await tester.pump();
+      expect(createArguments()['windowHandle'], 1099);
+
+      await tester.pumpWidget(wrapWithView: false, tree(inSecond: false));
+      await tester.pump();
+
+      final setHostView = viewCalls.singleWhere(
+        (call) => call.method == 'setHostView',
+      );
+      expect(setHostView.arguments, isEmpty);
+    },
+  );
 }

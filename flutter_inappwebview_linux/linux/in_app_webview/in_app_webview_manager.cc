@@ -164,9 +164,30 @@ void InAppWebViewManager::CreateInAppWebView(FlMethodCall* method_call) {
     keepAliveId = keepAliveIdOpt.value();
   }
 
+  // Multi-window support: Dart may pass the handles of the window that hosts
+  // the Flutter view showing this webview; they replace the cached ones so
+  // popups and dialogs attach to the right window.
+  GtkWindow* host_window = nullptr;
+  FlView* host_view = nullptr;
+  auto windowHandleOpt = get_optional_fl_map_value<int64_t>(args, "windowHandle");
+  if (windowHandleOpt.has_value() && windowHandleOpt.value() != 0) {
+    host_window = GTK_WINDOW(reinterpret_cast<gpointer>(
+        static_cast<intptr_t>(windowHandleOpt.value())));
+  }
+  auto flutterViewHandleOpt =
+      get_optional_fl_map_value<int64_t>(args, "flutterViewHandle");
+  if (flutterViewHandleOpt.has_value() && flutterViewHandleOpt.value() != 0) {
+    host_view = FL_VIEW(reinterpret_cast<gpointer>(
+        static_cast<intptr_t>(flutterViewHandleOpt.value())));
+  }
+
   if (!keepAliveId.empty()) {
     auto existingView = TakeKeepAliveWebView(keepAliveId);
     if (existingView != nullptr) {
+      // A kept-alive webview may come back in another window than before.
+      if (existingView->webview() != nullptr) {
+        existingView->webview()->SetHostView(host_window, host_view);
+      }
       int64_t texture_id = existingView->texture_id();
       platform_views_[texture_id] = std::move(existingView);
       
@@ -179,24 +200,10 @@ void InAppWebViewManager::CreateInAppWebView(FlMethodCall* method_call) {
   InAppWebViewCreationParams params;
   params.id = next_id_++;
   params.plugin = plugin_;  // Pass plugin instance for accessing managers
-  params.gtkWindow = gtk_window_;  // Pass the cached GTK window
-  params.flView = fl_view_;  // Pass the cached FlView for focus restoration
+  // The host window's handles, or the cached GTK window and FlView.
+  params.gtkWindow = host_window != nullptr ? host_window : gtk_window_;
+  params.flView = host_view != nullptr ? host_view : fl_view_;
   params.manager = this;  // Pass manager for multi-window support
-
-  // Multi-window support: Dart may pass the handles of the window that hosts
-  // the Flutter view showing this webview; they replace the cached ones so
-  // popups and dialogs attach to the right window.
-  auto windowHandleOpt = get_optional_fl_map_value<int64_t>(args, "windowHandle");
-  if (windowHandleOpt.has_value() && windowHandleOpt.value() != 0) {
-    params.gtkWindow = GTK_WINDOW(reinterpret_cast<gpointer>(
-        static_cast<intptr_t>(windowHandleOpt.value())));
-  }
-  auto flutterViewHandleOpt =
-      get_optional_fl_map_value<int64_t>(args, "flutterViewHandle");
-  if (flutterViewHandleOpt.has_value() && flutterViewHandleOpt.value() != 0) {
-    params.flView = FL_VIEW(reinterpret_cast<gpointer>(
-        static_cast<intptr_t>(flutterViewHandleOpt.value())));
-  }
 
   FlValue* initial_settings = fl_value_lookup_string(args, "initialSettings");
   if (initial_settings != nullptr && fl_value_get_type(initial_settings) == FL_VALUE_TYPE_MAP) {

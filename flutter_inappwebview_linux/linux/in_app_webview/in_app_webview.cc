@@ -1204,6 +1204,11 @@ void InAppWebView::UpdateMonitorRefreshRate() {
 }
 
 void InAppWebView::SetHostView(GtkWindow* window, FlView* fl_view) {
+  // No window: back to the one cached at plugin registration (the main view).
+  if (window == nullptr && plugin_ != nullptr) {
+    window = plugin_->gtkWindow();
+    fl_view = plugin_->flView();
+  }
   if (fl_view != nullptr) {
     fl_view_ = fl_view;
   }
