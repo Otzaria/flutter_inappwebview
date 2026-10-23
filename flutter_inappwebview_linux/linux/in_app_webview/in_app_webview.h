@@ -490,6 +490,10 @@ class InAppWebView : public TextureWebViewApi {
   // Get the FlView (for focus restoration after popup dialogs)
   FlView* getFlView() const { return fl_view_; }
 
+  // Multi-window support: rehosts the webview on another window after the
+  // Flutter view showing it moved (popups, dialogs, scale and refresh rate).
+  void SetHostView(GtkWindow* window, FlView* fl_view);
+
  private:
   PluginInstance* plugin_ = nullptr;  // Plugin instance for accessing managers
   FlPluginRegistrar* registrar_ = nullptr;

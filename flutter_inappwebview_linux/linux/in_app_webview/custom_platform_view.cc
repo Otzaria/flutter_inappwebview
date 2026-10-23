@@ -1,6 +1,7 @@
 #include "custom_platform_view.h"
 
 #include <gdk/gdk.h>
+#include <gtk/gtk.h>
 
 #include <cstring>
 
@@ -490,6 +491,29 @@ void CustomPlatformView::HandleMethodCallImpl(FlMethodCall* method_call) {
 
     if (webview_) {
       webview_->setFocused(focused);
+    }
+    fl_method_call_respond_success(method_call, nullptr, nullptr);
+    return;
+  }
+
+  // setHostView: {windowHandle, flutterViewHandle} - the Flutter view showing
+  // this webview moved to another window (multi-window support).
+  if (strcmp(method, "setHostView") == 0) {
+    if (webview_ && fl_value_get_type(args) == FL_VALUE_TYPE_MAP) {
+      GtkWindow* window = nullptr;
+      FlView* fl_view = nullptr;
+      auto windowHandleOpt = get_optional_fl_map_value<int64_t>(args, "windowHandle");
+      if (windowHandleOpt.has_value() && windowHandleOpt.value() != 0) {
+        window = GTK_WINDOW(reinterpret_cast<gpointer>(
+            static_cast<intptr_t>(windowHandleOpt.value())));
+      }
+      auto flutterViewHandleOpt =
+          get_optional_fl_map_value<int64_t>(args, "flutterViewHandle");
+      if (flutterViewHandleOpt.has_value() && flutterViewHandleOpt.value() != 0) {
+        fl_view = FL_VIEW(reinterpret_cast<gpointer>(
+            static_cast<intptr_t>(flutterViewHandleOpt.value())));
+      }
+      webview_->SetHostView(window, fl_view);
     }
     fl_method_call_respond_success(method_call, nullptr, nullptr);
     return;

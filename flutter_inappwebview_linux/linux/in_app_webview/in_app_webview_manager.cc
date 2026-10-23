@@ -183,6 +183,21 @@ void InAppWebViewManager::CreateInAppWebView(FlMethodCall* method_call) {
   params.flView = fl_view_;  // Pass the cached FlView for focus restoration
   params.manager = this;  // Pass manager for multi-window support
 
+  // Multi-window support: Dart may pass the handles of the window that hosts
+  // the Flutter view showing this webview; they replace the cached ones so
+  // popups and dialogs attach to the right window.
+  auto windowHandleOpt = get_optional_fl_map_value<int64_t>(args, "windowHandle");
+  if (windowHandleOpt.has_value() && windowHandleOpt.value() != 0) {
+    params.gtkWindow = GTK_WINDOW(reinterpret_cast<gpointer>(
+        static_cast<intptr_t>(windowHandleOpt.value())));
+  }
+  auto flutterViewHandleOpt =
+      get_optional_fl_map_value<int64_t>(args, "flutterViewHandle");
+  if (flutterViewHandleOpt.has_value() && flutterViewHandleOpt.value() != 0) {
+    params.flView = FL_VIEW(reinterpret_cast<gpointer>(
+        static_cast<intptr_t>(flutterViewHandleOpt.value())));
+  }
+
   FlValue* initial_settings = fl_value_lookup_string(args, "initialSettings");
   if (initial_settings != nullptr && fl_value_get_type(initial_settings) == FL_VALUE_TYPE_MAP) {
     params.initialSettings = std::make_shared<InAppWebViewSettings>(initial_settings);
