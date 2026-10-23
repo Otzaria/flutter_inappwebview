@@ -260,6 +260,7 @@ InAppWebView::InAppWebView(FlPluginRegistrar* registrar, FlBinaryMessenger* mess
   // This helps WPE synchronize frame production with the display
   SetupMonitorChangeHandlers();
   UpdateMonitorRefreshRate();
+  ConnectHostWindowDestroyHandler();
 
   if (settings_) {
     settings_->applyToWebView(webview_);
@@ -364,6 +365,7 @@ void InAppWebView::AttachChannel(FlBinaryMessenger* messenger, const std::string
 InAppWebView::~InAppWebView() {
   debugLog("dealloc InAppWebView");
 
+  DisconnectHostWindowDestroyHandler();
   CleanupMonitorChangeHandlers();
 
   context_menu_popup_.reset();
@@ -1232,8 +1234,10 @@ void InAppWebView::SetHostView(GtkWindow* window, FlView* fl_view) {
     g_signal_handler_disconnect(gtk_window_, configure_event_handler_id_);
     configure_event_handler_id_ = 0;
   }
+  DisconnectHostWindowDestroyHandler();
 
   gtk_window_ = window;
+  ConnectHostWindowDestroyHandler();
 
 #ifdef HAVE_WPE_PLATFORM
   // Same scale tracking as at creation: the new window may be on a monitor
@@ -1274,6 +1278,53 @@ void InAppWebView::SetHostView(GtkWindow* window, FlView* fl_view) {
       this);
 
   UpdateMonitorRefreshRate();
+}
+
+void InAppWebView::ConnectHostWindowDestroyHandler() {
+  if (gtk_window_ == nullptr || host_destroy_handler_id_ != 0) {
+    return;
+  }
+  host_destroy_handler_id_ = g_signal_connect(
+      gtk_window_, "destroy",
+      G_CALLBACK(+[](GtkWidget*, gpointer user_data) {
+        static_cast<InAppWebView*>(user_data)->OnHostWindowDestroyed();
+      }),
+      this);
+}
+
+void InAppWebView::DisconnectHostWindowDestroyHandler() {
+  if (gtk_window_ != nullptr && host_destroy_handler_id_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, host_destroy_handler_id_);
+  }
+  host_destroy_handler_id_ = 0;
+}
+
+void InAppWebView::OnHostWindowDestroyed() {
+  // Runs during the "destroy" emission, so the window is still a valid object
+  // and the handlers on it can be disconnected.
+  GtkWindow* fallback = plugin_ != nullptr ? plugin_->gtkWindow() : nullptr;
+  if (fallback != nullptr && fallback != gtk_window_) {
+    SetHostView(fallback, plugin_->flView());
+    return;
+  }
+
+  // The registration window itself is going away: drop everything bound to it.
+  HideAllPopups();
+  option_menu_popup_.reset();
+  context_menu_popup_.reset();
+#ifdef HAVE_WPE_PLATFORM
+  if (scale_changed_handler_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, scale_changed_handler_);
+    scale_changed_handler_ = 0;
+  }
+#endif
+  if (configure_event_handler_id_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, configure_event_handler_id_);
+    configure_event_handler_id_ = 0;
+  }
+  DisconnectHostWindowDestroyHandler();
+  gtk_window_ = nullptr;
+  fl_view_ = nullptr;
 }
 
 // === WPE Backend Callbacks ===
