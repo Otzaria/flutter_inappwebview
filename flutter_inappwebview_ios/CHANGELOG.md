@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Presented in-app and Safari browsers from the calling Flutter engine's window in apps with multiple scenes.
 - Batched console notifications while preserving message order and immediate warning/error delivery.
 - Finished failed custom-scheme requests and prevented delivery after cancellation.
 - Added `WebAuthenticationSession.additionalHeaderFields` on iOS 17.4+.
