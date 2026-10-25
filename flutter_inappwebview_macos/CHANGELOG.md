@@ -1,5 +1,6 @@
 ## 1.2.0-beta.3
 
+- Present file chooser and JavaScript dialogs as sheets attached to the hosting window.
 - Batched console notifications while preserving message order and immediate warning/error delivery.
 - Coalesced scroll notifications and removed their unused JavaScript promise round trip.
 - Finished failed custom-scheme requests and prevented delivery after cancellation.

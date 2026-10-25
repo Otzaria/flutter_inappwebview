@@ -140,6 +140,21 @@ class LinuxWebViewCreationDiagnostics {
       _errors.add(LinuxWebViewCreationFailure(error, stackTrace));
 }
 
+/// Native handles of the window that hosts a given Flutter view:
+/// the `GtkWindow*` and `FlView*` addresses of that window.
+typedef LinuxWebViewHostHandles = ({int windowHandle, int flutterViewHandle});
+
+/// Multi-window support: maps a [FlutterView.viewId] to the native handles of
+/// its host window, so popups and dialogs attach to the window that actually
+/// shows the webview instead of the window cached at plugin registration.
+class LinuxWebViewHostWindow {
+  LinuxWebViewHostWindow._();
+
+  /// Set by the application. Returning null hosts the webview on the window
+  /// cached at plugin registration (the main view).
+  static LinuxWebViewHostHandles? Function(int flutterViewId)? resolver;
+}
+
 class CustomFlutterViewControllerValue {
   const CustomFlutterViewControllerValue({required this.isInitialized});
 
@@ -419,6 +434,19 @@ class CustomPlatformViewController
     assert(value.isInitialized);
     return _methodChannel.invokeMethod('setFocused', focused);
   }
+
+  /// Rehosts the webview on another window after it moved between windows.
+  /// A null [host] means the window cached at plugin registration.
+  Future<void> _setHostView(LinuxWebViewHostHandles? host) async {
+    if (_isDisposed || _creationError != null) {
+      return;
+    }
+    assert(value.isInitialized);
+    return _methodChannel.invokeMethod('setHostView', <String, dynamic>{
+      if (host != null) 'windowHandle': host.windowHandle,
+      if (host != null) 'flutterViewHandle': host.flutterViewHandle,
+    });
+  }
 }
 
 class CustomPlatformView extends StatefulWidget {
@@ -468,6 +496,10 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   bool _textureOffsetReportDirty = false;
   double? _lastObservedScaleFactor;
   Size? _laidOutSize;
+  bool _initializeStarted = false;
+  int? _hostFlutterViewId;
+  int _hostChangeGeneration = 0;
+  Future<void> _hostViewSyncFuture = Future<void>.value();
 
   // Track click timing for double-click detection
   DateTime? _lastClickTime;
@@ -484,21 +516,6 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    unawaited(
-      _controller
-          .initialize(
-            onPlatformViewCreated: (id) {
-              if (!mounted) {
-                return;
-              }
-              widget.onPlatformViewCreated?.call(id);
-              setState(() {});
-            },
-            arguments: widget.creationParams,
-          )
-          .catchError((Object _) {}),
-    );
-
     _cursorSubscription = _controller._cursor.listen((cursor) {
       if (!mounted) {
         return;
@@ -509,9 +526,77 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     });
   }
 
+  // Creation needs View.of (the host window), so it runs here, not initState.
+  void _initializeController(LinuxWebViewHostHandles? host) {
+    dynamic arguments = widget.creationParams;
+    if (host != null &&
+        (arguments == null || arguments is Map<String, dynamic>)) {
+      arguments = <String, dynamic>{
+        ...?arguments as Map<String, dynamic>?,
+        'windowHandle': host.windowHandle,
+        'flutterViewHandle': host.flutterViewHandle,
+      };
+    }
+    unawaited(
+      _controller
+          .initialize(
+            onPlatformViewCreated: (id) {
+              if (!mounted) {
+                return;
+              }
+              widget.onPlatformViewCreated?.call(id);
+              setState(() {});
+            },
+            arguments: arguments,
+          )
+          .catchError((Object _) {}),
+    );
+  }
+
+  void _syncHostView() {
+    final viewId = View.of(context).viewId;
+    if (!_initializeStarted) {
+      _initializeStarted = true;
+      _hostFlutterViewId = viewId;
+      _initializeController(LinuxWebViewHostWindow.resolver?.call(viewId));
+      return;
+    }
+    if (_hostFlutterViewId == viewId) {
+      return;
+    }
+    // The widget was reparented into another window (e.g. a tab moved).
+    _hostFlutterViewId = viewId;
+    final resolver = LinuxWebViewHostWindow.resolver;
+    // Sent even when the resolver returns null: a move back to the main view
+    // must leave the previous window, which may be destroyed right after.
+    final host = resolver?.call(viewId);
+    final generation = ++_hostChangeGeneration;
+    _hostViewSyncFuture = _hostViewSyncFuture
+        .then((_) => _rehost(host, generation))
+        .catchError((Object _) {});
+  }
+
+  Future<void> _rehost(LinuxWebViewHostHandles? host, int generation) async {
+    await _controller.ready;
+    if (!mounted || generation != _hostChangeGeneration) {
+      return;
+    }
+
+    await _controller._setHostView(host);
+    if (!mounted || generation != _hostChangeGeneration) {
+      return;
+    }
+
+    // setHostView resets the native surface geometry. Replay both values even
+    // when Flutter's logical size and effective scale have not changed.
+    _scheduleSurfaceSizeReport();
+    _scheduleTextureOffsetReport();
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _syncHostView();
     final scaleFactor = _effectiveScaleFactor;
     if (_lastObservedScaleFactor != scaleFactor) {
       _lastObservedScaleFactor = scaleFactor;

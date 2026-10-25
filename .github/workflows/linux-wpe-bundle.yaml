@@ -46,9 +46,11 @@ jobs:
       - name: Install GLib development files
         run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev pkg-config
       - name: Check patch whitespace
-        run: git diff --check HEAD^
+        run: git -c core.whitespace=cr-at-eol diff --check HEAD^
       - name: Test native WebView creation failures and software fallback
         run: python3 flutter_inappwebview_linux/linux/test/run_creation_backend_test.py
+      - name: Test host lifetime and asynchronous dialogs
+        run: python3 flutter_inappwebview_linux/linux/test/run_host_lifetime_test.py
       - name: Test explicit GDK scale parsing
         run: flutter_inappwebview_linux/linux/test/run_gdk_scale_test.sh
       - name: Test WPEPlatform SDK dependency probe

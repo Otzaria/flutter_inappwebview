@@ -37,10 +37,6 @@ InAppBrowserManager::InAppBrowserManager(PluginInstance* plugin) : plugin_(plugi
   // Keep reference to messenger to ensure it stays valid
   g_object_ref(messenger_);
 
-  // Cache the GTK window and FlView from plugin
-  gtk_window_ = plugin_->gtkWindow();
-  fl_view_ = plugin_->flView();
-
   // Create the method channel
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   method_channel_ = fl_method_channel_new(messenger_, METHOD_CHANNEL_NAME, FL_METHOD_CODEC(codec));
@@ -66,8 +62,6 @@ InAppBrowserManager::~InAppBrowserManager() {
     messenger_ = nullptr;
   }
 
-  gtk_window_ = nullptr;
-  fl_view_ = nullptr;
   registrar_ = nullptr;
   plugin_ = nullptr;
 }
@@ -202,7 +196,7 @@ std::optional<WebViewCreationError> InAppBrowserManager::createInAppBrowser(FlVa
   params.menuItems = menuItems;
 
   // Create the browser - pass cached messenger directly
-  auto browser = std::make_unique<InAppBrowser>(this, messenger_, gtk_window_, params);
+  auto browser = std::make_unique<InAppBrowser>(this, messenger_, plugin_->gtkWindow(), params);
   if (browser->creationError().has_value()) {
     return browser->creationError();
   }

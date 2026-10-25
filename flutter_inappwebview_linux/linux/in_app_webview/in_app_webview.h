@@ -388,7 +388,7 @@ class InAppWebView : public TextureWebViewApi {
   // Hide and cleanup any visible color picker
   void HideColorPicker();
   // Hide and cleanup any visible file chooser dialog
-  void HideFileChooser();
+  void HideFileChooser(bool force = false);
   // Hide and cleanup any visible option menu (HTML <select>)
   void HideOptionMenu();
 
@@ -398,7 +398,7 @@ class InAppWebView : public TextureWebViewApi {
                       const std::string& min, const std::string& max,
                       const std::string& step, int x, int y);
   // Hide and cleanup any visible date picker
-  void HideDatePicker();
+  void HideDatePicker(bool force = false);
 
   // Resolve an internal handler's Promise with a JSON result via WebKitScriptMessageReply
   // Used by color/date picker dialogs to send the result back to JavaScript (works for iframes)
@@ -414,6 +414,7 @@ class InAppWebView : public TextureWebViewApi {
   // Hide all custom popups (context menu, color picker, file chooser, option menu, etc.)
   // Use this when the webview state changes (resize, scroll, load, focus loss, etc.)
   void HideAllPopups();
+  void CancelHostBoundPopups();
 
   // Clipboard operations (syncs WPE WebKit clipboard with system clipboard)
   void copyToClipboard();
@@ -489,6 +490,11 @@ class InAppWebView : public TextureWebViewApi {
 
   // Get the FlView (for focus restoration after popup dialogs)
   FlView* getFlView() const { return fl_view_; }
+
+  // Multi-window support: rehosts the webview on another window after the
+  // Flutter view showing it moved (popups, dialogs, scale and refresh rate).
+  // A null window means the window cached at plugin registration.
+  void SetHostView(GtkWindow* window, FlView* fl_view);
 
  private:
   PluginInstance* plugin_ = nullptr;  // Plugin instance for accessing managers
@@ -679,6 +685,8 @@ class InAppWebView : public TextureWebViewApi {
   // Monitor change tracking for refresh rate updates
   gulong monitors_changed_handler_id_ = 0;
   gulong configure_event_handler_id_ = 0;
+  gulong host_destroy_handler_id_ = 0;
+  gulong host_view_destroy_handler_id_ = 0;
 
   // Download signal handler ID
   gulong download_started_handler_id_ = 0;
@@ -709,6 +717,13 @@ class InAppWebView : public TextureWebViewApi {
   void PrepareAndAddUserScripts();  // Add plugin scripts based on settings
   void SetupMonitorChangeHandlers();
   void CleanupMonitorChangeHandlers();
+  // The host window is a raw pointer (no ref): when it is destroyed while the
+  // webview is still alive, fall back to the window cached at registration.
+  void ConnectHostWindowDestroyHandler();
+  void DisconnectHostWindowDestroyHandler();
+  void ConnectHostViewDestroyHandler();
+  void DisconnectHostViewDestroyHandler();
+  void OnHostWindowDestroyed();
   void UpdateMonitorRefreshRate();
 
  public:
@@ -751,6 +766,7 @@ class InAppWebView : public TextureWebViewApi {
   GtkWidget* active_file_dialog_ = nullptr;   // Active file chooser dialog (non-blocking)
   int64_t file_dialog_show_time_ = 0;          // Time when dialog was shown (to prevent immediate close)
   void* file_chooser_context_ = nullptr;       // Opaque pointer to FileChooserContext (for cleanup)
+  std::shared_ptr<int> lifetime_token_ = std::make_shared<int>(0);
 
   // Option menu state (for HTML <select> support)
   WebKitOptionMenu* webkit_option_menu_ = nullptr;  // WebKit's option menu object (kept alive during popup)

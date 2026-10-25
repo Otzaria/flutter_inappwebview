@@ -254,12 +254,14 @@ InAppWebView::InAppWebView(FlPluginRegistrar* registrar, FlBinaryMessenger* mess
   if (!InitWpeBackend() || !InitWebView(params)) {
     return;
   }
+  ConnectHostViewDestroyHandler();
   RegisterEventHandlers();
 
   // Set up monitor change handlers and initial refresh rate (like Cog browser does)
   // This helps WPE synchronize frame production with the display
   SetupMonitorChangeHandlers();
   UpdateMonitorRefreshRate();
+  ConnectHostWindowDestroyHandler();
 
   if (settings_) {
     settings_->applyToWebView(webview_);
@@ -363,7 +365,11 @@ void InAppWebView::AttachChannel(FlBinaryMessenger* messenger, const std::string
 
 InAppWebView::~InAppWebView() {
   debugLog("dealloc InAppWebView");
+  CancelHostBoundPopups();
+  lifetime_token_.reset();
 
+  DisconnectHostWindowDestroyHandler();
+  DisconnectHostViewDestroyHandler();
   CleanupMonitorChangeHandlers();
 
   context_menu_popup_.reset();
@@ -1201,6 +1207,169 @@ void InAppWebView::UpdateMonitorRefreshRate() {
     }
   }
 #endif
+}
+
+void InAppWebView::SetHostView(GtkWindow* window, FlView* fl_view) {
+  // No window: back to the one cached at plugin registration (the main view).
+  if (window == nullptr && plugin_ != nullptr) {
+    window = plugin_->gtkWindow();
+    fl_view = plugin_->flView();
+  }
+  if (fl_view != fl_view_) {
+    DisconnectHostViewDestroyHandler();
+    fl_view_ = fl_view;
+    ConnectHostViewDestroyHandler();
+  }
+  if (window == gtk_window_) {
+    return;
+  }
+
+  // Popups are parented to the previous window; drop them so the next use
+  // recreates them against the new one.
+  CancelHostBoundPopups();
+  HideAllPopups();
+  option_menu_popup_.reset();
+  context_menu_popup_.reset();
+
+#ifdef HAVE_WPE_PLATFORM
+  if (gtk_window_ != nullptr && scale_changed_handler_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, scale_changed_handler_);
+    scale_changed_handler_ = 0;
+  }
+#endif
+  if (gtk_window_ != nullptr && configure_event_handler_id_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, configure_event_handler_id_);
+    configure_event_handler_id_ = 0;
+  }
+  DisconnectHostWindowDestroyHandler();
+
+  gtk_window_ = window;
+  if (gtk_window_ != nullptr) {
+    ConnectHostWindowDestroyHandler();
+  }
+
+#ifdef HAVE_WPE_PLATFORM
+  // Same scale tracking as at creation: the new window may be on a monitor
+  // with a different scale factor.
+  int gtk_scale = gtk_window_ != nullptr
+      ? gtk_widget_get_scale_factor(GTK_WIDGET(gtk_window_)) : 0;
+  if (gtk_scale > 0 && static_cast<double>(gtk_scale) != scale_factor_) {
+    scale_factor_ = static_cast<double>(gtk_scale);
+    if (wpe_toplevel_ != nullptr) {
+      wpe_toplevel_scale_changed(wpe_toplevel_, scale_factor_);
+    }
+    if (on_frame_available_) {
+      on_frame_available_();
+    }
+  }
+  if (gtk_window_ != nullptr) {
+    scale_changed_handler_ = g_signal_connect(gtk_window_, "notify::scale-factor",
+        G_CALLBACK(+[](GObject* object, GParamSpec* pspec, gpointer user_data) {
+          auto* self = static_cast<InAppWebView*>(user_data);
+          int new_scale = gtk_widget_get_scale_factor(GTK_WIDGET(object));
+          if (new_scale > 0 && static_cast<double>(new_scale) != self->scale_factor_) {
+            self->scale_factor_ = static_cast<double>(new_scale);
+            if (self->wpe_toplevel_ != nullptr) {
+              wpe_toplevel_scale_changed(self->wpe_toplevel_, self->scale_factor_);
+            }
+            if (self->on_frame_available_) {
+              self->on_frame_available_();
+            }
+          }
+        }), this);
+  }
+#endif
+
+  if (gtk_window_ != nullptr) {
+    configure_event_handler_id_ = g_signal_connect(
+        gtk_window_, "configure-event",
+        G_CALLBACK(+[](GtkWidget*, GdkEventConfigure*, gpointer user_data) -> gboolean {
+          auto* self = static_cast<InAppWebView*>(user_data);
+          self->UpdateMonitorRefreshRate();
+          return FALSE;  // Continue event propagation
+        }),
+        this);
+
+    UpdateMonitorRefreshRate();
+  }
+}
+
+void InAppWebView::ConnectHostWindowDestroyHandler() {
+  if (gtk_window_ == nullptr || host_destroy_handler_id_ != 0) {
+    return;
+  }
+  host_destroy_handler_id_ = g_signal_connect(
+      gtk_window_, "destroy",
+      G_CALLBACK(+[](GtkWidget*, gpointer user_data) {
+        static_cast<InAppWebView*>(user_data)->OnHostWindowDestroyed();
+      }),
+      this);
+}
+
+void InAppWebView::DisconnectHostWindowDestroyHandler() {
+  if (gtk_window_ != nullptr && host_destroy_handler_id_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, host_destroy_handler_id_);
+  }
+  host_destroy_handler_id_ = 0;
+}
+
+void InAppWebView::ConnectHostViewDestroyHandler() {
+  if (fl_view_ == nullptr || host_view_destroy_handler_id_ != 0) {
+    return;
+  }
+  host_view_destroy_handler_id_ = g_signal_connect(
+      fl_view_, "destroy",
+      G_CALLBACK(+[](GtkWidget* widget, gpointer user_data) {
+        auto* self = static_cast<InAppWebView*>(user_data);
+        if (self->fl_view_ == FL_VIEW(widget)) {
+          if (self->host_view_destroy_handler_id_ != 0) {
+            g_signal_handler_disconnect(widget, self->host_view_destroy_handler_id_);
+          }
+          self->fl_view_ = nullptr;
+          self->host_view_destroy_handler_id_ = 0;
+        }
+      }),
+      this);
+}
+
+void InAppWebView::DisconnectHostViewDestroyHandler() {
+  if (fl_view_ != nullptr && host_view_destroy_handler_id_ != 0) {
+    g_signal_handler_disconnect(fl_view_, host_view_destroy_handler_id_);
+  }
+  host_view_destroy_handler_id_ = 0;
+}
+
+void InAppWebView::OnHostWindowDestroyed() {
+  // Runs during the "destroy" emission, so the window is still a valid object
+  // and the handlers on it can be disconnected.
+  GtkWindow* fallback = plugin_ != nullptr ? plugin_->gtkWindow() : nullptr;
+  if (plugin_ != nullptr) {
+    plugin_->InvalidateHost(gtk_window_, nullptr);
+  }
+  if (fallback != nullptr && fallback != gtk_window_) {
+    SetHostView(fallback, plugin_->flView());
+    return;
+  }
+
+  // The registration window itself is going away: drop everything bound to it.
+  CancelHostBoundPopups();
+  HideAllPopups();
+  option_menu_popup_.reset();
+  context_menu_popup_.reset();
+#ifdef HAVE_WPE_PLATFORM
+  if (scale_changed_handler_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, scale_changed_handler_);
+    scale_changed_handler_ = 0;
+  }
+#endif
+  if (configure_event_handler_id_ != 0) {
+    g_signal_handler_disconnect(gtk_window_, configure_event_handler_id_);
+    configure_event_handler_id_ = 0;
+  }
+  DisconnectHostWindowDestroyHandler();
+  DisconnectHostViewDestroyHandler();
+  gtk_window_ = nullptr;
+  fl_view_ = nullptr;
 }
 
 // === WPE Backend Callbacks ===
@@ -5726,13 +5895,13 @@ void InAppWebView::HideColorPicker() {
   // This is intentionally a no-op - the dialog manages its own lifecycle.
 }
 
-void InAppWebView::HideFileChooser() {
+void InAppWebView::HideFileChooser(bool force) {
   if (active_file_dialog_ != nullptr) {
     // Don't close the dialog if it was just shown (within 200ms)
     // This prevents the click that triggered the file chooser from immediately closing it
     int64_t now = g_get_monotonic_time();
     int64_t elapsed_us = now - file_dialog_show_time_;
-    if (elapsed_us < 200000) {
+    if (!force && elapsed_us < 200000) {
       return;
     }
     
@@ -5770,6 +5939,19 @@ void InAppWebView::HideAllPopups() {
   HideFileChooser();
   HideOptionMenu();
   HideDatePicker();
+}
+
+void InAppWebView::CancelHostBoundPopups() {
+  // Host changes and host destruction must synchronously release dialogs that
+  // are transient for the old window. Route response-based dialogs through
+  // their normal cancellation handlers so pending WebKit replies are resolved.
+  if (active_color_dialog_ != nullptr) {
+    gtk_dialog_response(GTK_DIALOG(active_color_dialog_), GTK_RESPONSE_CANCEL);
+  }
+  if (active_date_dialog_ != nullptr) {
+    gtk_dialog_response(GTK_DIALOG(active_date_dialog_), GTK_RESPONSE_CANCEL);
+  }
+  HideFileChooser(true);
 }
 
 void InAppWebView::ResolveInternalHandlerWithReply(WebKitScriptMessageReply* reply, const std::string& jsonResult) {
@@ -6222,11 +6404,11 @@ void InAppWebView::ShowDatePicker(const std::string& inputType, const std::strin
   date_dialog_show_time_ = g_get_monotonic_time();
 }
 
-void InAppWebView::HideDatePicker() {
+void InAppWebView::HideDatePicker(bool force) {
   if (active_date_dialog_ != nullptr) {
     int64_t now = g_get_monotonic_time();
     int64_t elapsed_us = now - date_dialog_show_time_;
-    if (elapsed_us < 200000) {
+    if (!force && elapsed_us < 200000) {
       return;  // Don't close if just shown
     }
     
@@ -7167,7 +7349,11 @@ gboolean InAppWebView::OnRunFileChooser(WebKitWebView* web_view,
 
   // If no channel delegate, show native dialog directly
   if (!self->channel_delegate_) {
-    ShowNativeFileChooser(self, request, select_multiple, acceptTypes, self->gtk_window_);
+    if (self->gtk_window_ != nullptr) {
+      ShowNativeFileChooser(self, request, select_multiple, acceptTypes, self->gtk_window_);
+    } else {
+      webkit_file_chooser_request_cancel(request);
+    }
     return TRUE;
   }
 
@@ -7180,7 +7366,7 @@ gboolean InAppWebView::OnRunFileChooser(WebKitWebView* web_view,
   // Capture variables for the lambda
   bool selectMultipleCopy = select_multiple;
   std::vector<std::string> acceptTypesCopy = acceptTypes;
-  GtkWindow* parentWindow = self->gtk_window_;
+  std::weak_ptr<int> lifetime = self->lifetime_token_;
 
   self->channel_delegate_->onShowFileChooser(
       mode,
@@ -7188,7 +7374,12 @@ gboolean InAppWebView::OnRunFileChooser(WebKitWebView* web_view,
       false,  // isCaptureEnabled - not exposed by WPE API
       std::nullopt,  // title
       std::nullopt,  // filenameHint
-      [self, request, selectMultipleCopy, acceptTypesCopy, parentWindow](ShowFileChooserResponse response) {
+      [self, request, selectMultipleCopy, acceptTypesCopy, lifetime](ShowFileChooserResponse response) {
+        if (lifetime.expired()) {
+          webkit_file_chooser_request_cancel(request);
+          g_object_unref(request);
+          return;
+        }
         if (response.handledByClient) {
           // Client handled it - use the file paths from Dart
           if (response.filePaths.has_value() && !response.filePaths->empty()) {
@@ -7205,7 +7396,14 @@ gboolean InAppWebView::OnRunFileChooser(WebKitWebView* web_view,
           }
         } else {
           // Client didn't handle it - show native GTK file chooser
-          ShowNativeFileChooser(self, request, selectMultipleCopy, acceptTypesCopy, parentWindow);
+          // Resolve the parent at reply time: the view may have moved to a
+          // different live host while Dart was deciding whether to handle it.
+          if (self->gtk_window_ != nullptr) {
+            ShowNativeFileChooser(self, request, selectMultipleCopy, acceptTypesCopy,
+                                  self->gtk_window_);
+          } else {
+            webkit_file_chooser_request_cancel(request);
+          }
         }
         g_object_unref(request);
       });

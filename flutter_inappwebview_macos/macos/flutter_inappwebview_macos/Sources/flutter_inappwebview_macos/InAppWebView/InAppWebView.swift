@@ -48,6 +48,9 @@ public class InAppWebView: WKWebView, WKUIDelegate,
     var callAsyncJavaScriptBelowMacOS11Results: [String:((Any?) -> Void)] = [:]
     
     var currentOpenPanel: NSOpenPanel?
+    private var currentOpenPanelCompletion: JavaScriptDialogCompletion<[URL]?>?
+    private var activeJavaScriptDialogPresentations: [UUID: PendingJavaScriptDialog] = [:]
+    private var hostDialogWindowCloseObserver: NSObjectProtocol?
     
     fileprivate var interceptOnlyAsyncAjaxRequestsPluginScript: PluginScript?
     
@@ -1765,20 +1768,88 @@ public class InAppWebView: WKWebView, WKUIDelegate,
         completionHandler: @escaping ([URL]?) -> Void
     ) {
         let openPanel = NSOpenPanel()
+        currentOpenPanel?.cancel(self)
+        currentOpenPanel?.close()
+        currentOpenPanelCompletion?.call([])
         currentOpenPanel = openPanel
         openPanel.canChooseFiles = true
         if #available(macOS 10.13.4, *) {
             openPanel.canChooseDirectories = parameters.allowsDirectories
         }
         openPanel.allowsMultipleSelection = parameters.allowsMultipleSelection
-        openPanel.begin { (result) in
-            if result == .OK {
-                completionHandler(openPanel.urls)
-            } else {
-                completionHandler([])
+        let completion = JavaScriptDialogCompletion<[URL]?> { [weak self, weak openPanel] urls in
+            if self?.currentOpenPanel === openPanel {
+                self?.currentOpenPanel = nil
+                self?.currentOpenPanelCompletion = nil
             }
-            self.currentOpenPanel = nil
+            completionHandler(urls)
         }
+        currentOpenPanelCompletion = completion
+        let panelCompletion: (NSApplication.ModalResponse) -> Void = { [weak openPanel] result in
+            completion.call(result == .OK ? openPanel?.urls : [])
+        }
+        if let window = window {
+            observeHostDialogWindowClose(window)
+            openPanel.beginSheetModal(for: window, completionHandler: panelCompletion)
+        } else {
+            openPanel.begin { result in panelCompletion(result) }
+        }
+    }
+
+    private func runJavaScriptDialog(_ alert: NSAlert, completionHandler: @escaping (NSApplication.ModalResponse) -> Void) {
+        guard let window = window else {
+            JavaScriptDialogPresenter.present(alert, in: nil, completionHandler: completionHandler)
+            return
+        }
+
+        observeHostDialogWindowClose(window)
+        let id = UUID()
+        let presentation = PendingJavaScriptDialog(window: window, alert: alert) { response in
+            completionHandler(response)
+        }
+        activeJavaScriptDialogPresentations[id] = presentation
+        JavaScriptDialogPresenter.present(alert, in: window) { [weak self, weak presentation] response in
+            // Keep the presentation alive while removing its owning entry.
+            guard let presentation = presentation else { return }
+            self?.activeJavaScriptDialogPresentations.removeValue(forKey: id)
+            presentation.completion.call(response)
+        }
+    }
+
+    private func observeHostDialogWindowClose(_ window: NSWindow) {
+        if let observer = hostDialogWindowCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        hostDialogWindowCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: nil
+        ) { [weak self] _ in
+            self?.cancelHostDialogs()
+        }
+    }
+
+    private func cancelHostDialogs() {
+        if let observer = hostDialogWindowCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+            hostDialogWindowCloseObserver = nil
+        }
+        let presentations = Array(activeJavaScriptDialogPresentations.values)
+        activeJavaScriptDialogPresentations.removeAll()
+        presentations.forEach { $0.cancel() }
+
+        let openPanel = currentOpenPanel
+        let openPanelCompletion = currentOpenPanelCompletion
+        currentOpenPanel = nil
+        currentOpenPanelCompletion = nil
+        openPanel?.cancel(self)
+        openPanel?.close()
+        openPanelCompletion?.call([])
+    }
+
+    public override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if let window = window, window !== newWindow {
+            cancelHostDialogs()
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
     
     func createAlertDialog(message: String?, responseMessage: String?, confirmButtonTitle: String?, completionHandler: @escaping () -> Void) {
@@ -1789,8 +1860,7 @@ public class InAppWebView: WKWebView, WKUIDelegate,
         alert.messageText = title ?? ""
         alert.alertStyle = .informational
         alert.addButton(withTitle: okButton ?? "")
-        alert.runModal()
-        completionHandler()
+        runJavaScriptDialog(alert) { _ in completionHandler() }
     }
     
     public func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
@@ -1824,7 +1894,11 @@ public class InAppWebView: WKWebView, WKUIDelegate,
                 completionHandlerCalled = true
                 let responseMessage = response?.message
                 let confirmButtonTitle = response?.confirmButtonTitle
-                self?.createAlertDialog(message: message, responseMessage: responseMessage,
+                guard let self = self else {
+                    completionHandler()
+                    return
+                }
+                self.createAlertDialog(message: message, responseMessage: responseMessage,
                                        confirmButtonTitle: confirmButtonTitle, completionHandler: completionHandler)
             }
         }
@@ -1853,8 +1927,9 @@ public class InAppWebView: WKWebView, WKUIDelegate,
         alert.alertStyle = .informational
         alert.addButton(withTitle: okButton ?? "")
         alert.addButton(withTitle: cancelButton ?? "")
-        let res = alert.runModal()
-        completionHandler(res == .alertFirstButtonReturn)
+        runJavaScriptDialog(alert) { response in
+            completionHandler(JavaScriptDialogPresenter.confirmResult(response))
+        }
     }
     
     public func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
@@ -1886,7 +1961,11 @@ public class InAppWebView: WKWebView, WKUIDelegate,
                 let responseMessage = response?.message
                 let confirmButtonTitle = response?.confirmButtonTitle
                 let cancelButtonTitle = response?.cancelButtonTitle
-                self?.createConfirmDialog(message: message, responseMessage: responseMessage, confirmButtonTitle: confirmButtonTitle, cancelButtonTitle: cancelButtonTitle, completionHandler: completionHandler)
+                guard let self = self else {
+                    completionHandler(false)
+                    return
+                }
+                self.createConfirmDialog(message: message, responseMessage: responseMessage, confirmButtonTitle: confirmButtonTitle, cancelButtonTitle: cancelButtonTitle, completionHandler: completionHandler)
             }
         }
         callback.error = { (code: String, message: String?, details: Any?) in
@@ -1917,9 +1996,9 @@ public class InAppWebView: WKWebView, WKUIDelegate,
         let txt = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
         txt.stringValue = defaultValue ?? ""
         alert.accessoryView = txt
-        let res = alert.runModal()
-        
-        completionHandler(value != nil ? value : (res == .alertFirstButtonReturn ? txt.stringValue : nil))
+        runJavaScriptDialog(alert) { response in
+            completionHandler(JavaScriptDialogPresenter.promptResult(response, clientValue: value, enteredValue: txt.stringValue))
+        }
     }
     
     public func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt message: String, defaultText defaultValue: String?, initiatedByFrame frame: WKFrameInfo,
@@ -1953,7 +2032,11 @@ public class InAppWebView: WKWebView, WKUIDelegate,
                 let confirmButtonTitle = response?.confirmButtonTitle
                 let cancelButtonTitle = response?.cancelButtonTitle
                 let value = response?.value
-                self?.createPromptDialog(message: message, defaultValue: defaultValue, responseMessage: responseMessage, confirmButtonTitle: confirmButtonTitle,
+                guard let self = self else {
+                    completionHandler(nil)
+                    return
+                }
+                self.createPromptDialog(message: message, defaultValue: defaultValue, responseMessage: responseMessage, confirmButtonTitle: confirmButtonTitle,
                                         cancelButtonTitle: cancelButtonTitle, value: value, completionHandler: completionHandler)
             }
         }
@@ -2941,9 +3024,7 @@ if(window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)] 
         channelDelegate?.dispose()
         channelDelegate = nil
         runWindowBeforeCreatedCallbacks()
-        currentOpenPanel?.cancel(self)
-        currentOpenPanel?.close()
-        currentOpenPanel = nil
+        cancelHostDialogs()
         printJobCompletionHandler = nil
         removeObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress))
         removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
@@ -2987,6 +3068,7 @@ if(window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)] 
     }
     
     deinit {
+        cancelHostDialogs()
         debugPrint("InAppWebView - dealloc")
     }
 }

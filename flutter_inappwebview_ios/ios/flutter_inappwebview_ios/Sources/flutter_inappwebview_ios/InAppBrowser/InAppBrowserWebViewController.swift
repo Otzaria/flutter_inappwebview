@@ -398,7 +398,7 @@ public class InAppBrowserWebViewController: UIViewController, InAppBrowserDelega
     }
     
     public func show(completion: (() -> Void)? = nil) {
-        if let visibleViewController = UIApplication.shared.visibleViewController,
+        if let visibleViewController = UIApplication.shared.visibleViewController(presentingFrom: plugin?.registrar.viewController),
            let navigationController = navigationController {
             isHidden = false
             visibleViewController.present(navigationController, animated: true) {
