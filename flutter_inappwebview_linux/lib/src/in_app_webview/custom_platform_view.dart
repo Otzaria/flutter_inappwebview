@@ -498,6 +498,8 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   Size? _laidOutSize;
   bool _initializeStarted = false;
   int? _hostFlutterViewId;
+  int _hostChangeGeneration = 0;
+  Future<void> _hostViewSyncFuture = Future<void>.value();
 
   // Track click timing for double-click detection
   DateTime? _lastClickTime;
@@ -565,17 +567,30 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     // The widget was reparented into another window (e.g. a tab moved).
     _hostFlutterViewId = viewId;
     final resolver = LinuxWebViewHostWindow.resolver;
-    if (resolver == null) {
-      return;
-    }
     // Sent even when the resolver returns null: a move back to the main view
     // must leave the previous window, which may be destroyed right after.
-    final host = resolver(viewId);
-    unawaited(
-      _controller.ready
-          .then((_) => mounted ? _controller._setHostView(host) : null)
-          .catchError((Object _) {}),
-    );
+    final host = resolver?.call(viewId);
+    final generation = ++_hostChangeGeneration;
+    _hostViewSyncFuture = _hostViewSyncFuture
+        .then((_) => _rehost(host, generation))
+        .catchError((Object _) {});
+  }
+
+  Future<void> _rehost(LinuxWebViewHostHandles? host, int generation) async {
+    await _controller.ready;
+    if (!mounted || generation != _hostChangeGeneration) {
+      return;
+    }
+
+    await _controller._setHostView(host);
+    if (!mounted || generation != _hostChangeGeneration) {
+      return;
+    }
+
+    // setHostView resets the native surface geometry. Replay both values even
+    // when Flutter's logical size and effective scale have not changed.
+    _scheduleSurfaceSizeReport();
+    _scheduleTextureOffsetReport();
   }
 
   @override

@@ -20,9 +20,6 @@ InAppWebViewManager::InAppWebViewManager(PluginInstance* plugin)
   texture_registrar_ = plugin->textureRegistrar();
   messenger_ = plugin->messenger();
 
-  gtk_window_ = plugin->gtkWindow();
-  fl_view_ = plugin->flView();
-
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   method_channel_ = fl_method_channel_new(messenger_, METHOD_CHANNEL_NAME, FL_METHOD_CODEC(codec));
 
@@ -201,8 +198,8 @@ void InAppWebViewManager::CreateInAppWebView(FlMethodCall* method_call) {
   params.id = next_id_++;
   params.plugin = plugin_;  // Pass plugin instance for accessing managers
   // The host window's handles, or the cached GTK window and FlView.
-  params.gtkWindow = host_window != nullptr ? host_window : gtk_window_;
-  params.flView = host_view != nullptr ? host_view : fl_view_;
+  params.gtkWindow = host_window != nullptr ? host_window : plugin_->gtkWindow();
+  params.flView = host_view != nullptr ? host_view : plugin_->flView();
   params.manager = this;  // Pass manager for multi-window support
 
   FlValue* initial_settings = fl_value_lookup_string(args, "initialSettings");

@@ -16,10 +16,6 @@ HeadlessInAppWebViewManager::HeadlessInAppWebViewManager(PluginInstance* plugin)
     : plugin_(plugin), registrar_(plugin->registrar()) {
   messenger_ = plugin->messenger();
   
-  // Cache the GTK window from the plugin instance
-  // This may return nullptr for headless scenarios, which is fine
-  gtk_window_ = plugin->gtkWindow();
-
   // Create the method channel
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   method_channel_ = fl_method_channel_new(messenger_, METHOD_CHANNEL_NAME, FL_METHOD_CODEC(codec));
@@ -123,7 +119,7 @@ void HeadlessInAppWebViewManager::Run(FlMethodCall* method_call) {
   InAppWebViewCreationParams webviewParams;
   webviewParams.id = 0;  // Not used for headless
   webviewParams.plugin = plugin_;  // Pass plugin instance for accessing managers
-  webviewParams.gtkWindow = gtk_window_;  // Use cached GTK window (may be nullptr for headless)
+  webviewParams.gtkWindow = plugin_->gtkWindow();  // May be nullptr for headless/destroyed host.
   webviewParams.manager = nullptr;  // Not needed for headless
 
   // Parse initial settings

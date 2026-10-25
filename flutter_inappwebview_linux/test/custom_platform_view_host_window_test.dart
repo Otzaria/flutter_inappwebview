@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -190,4 +191,159 @@ void main() {
       expect(setHostView.arguments, isEmpty);
     },
   );
+
+  testWidgets('rehosting reapplies unchanged size and explicit scale', (
+    tester,
+  ) async {
+    LinuxWebViewHostWindow.resolver = (viewId) =>
+        (windowHandle: 1000 + viewId, flutterViewHandle: 2000 + viewId);
+    final webview = KeyedSubtree(
+      key: GlobalKey(),
+      child: const CustomPlatformView(
+        creationParams: <String, dynamic>{},
+        scaleFactor: 1.5,
+      ),
+    );
+    final secondView = _SecondTestView(tester.view);
+
+    Widget tree({required bool inSecond}) => ViewCollection(
+      views: [
+        View(
+          view: tester.view,
+          child: inSecond ? const SizedBox.shrink() : webview,
+        ),
+        View(
+          view: secondView,
+          child: inSecond ? webview : const SizedBox.shrink(),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: false));
+    await tester.pump();
+    expect(viewCalls.where((call) => call.method == 'setSize').last.arguments, [
+      800.0,
+      600.0,
+      1.5,
+    ]);
+    viewCalls.clear();
+
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: true));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      viewCalls.where((call) => call.method == 'setHostView'),
+      hasLength(1),
+    );
+    expect(
+      viewCalls.where((call) => call.method == 'setSize').last.arguments,
+      [800.0, 600.0, 1.5],
+      reason:
+          'Native setHostView resets scale; Flutter must reapply it even '
+          'when the widget dimensions and explicit scale are unchanged.',
+    );
+    expect(
+      viewCalls.where((call) => call.method == 'setTextureOffset'),
+      isNotEmpty,
+    );
+  });
+
+  testWidgets('rapid rehosting applies the latest unmapped host and geometry', (
+    tester,
+  ) async {
+    LinuxWebViewHostWindow.resolver = (viewId) =>
+        (windowHandle: 1000 + viewId, flutterViewHandle: 2000 + viewId);
+    final firstHostCall = Completer<void>();
+    var shouldHoldFirstHostCall = true;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(_viewChannel, (call) async {
+      viewCalls.add(call);
+      if (call.method == 'setHostView' && shouldHoldFirstHostCall) {
+        shouldHoldFirstHostCall = false;
+        await firstHostCall.future;
+      }
+      return null;
+    });
+
+    final webview = KeyedSubtree(
+      key: GlobalKey(),
+      child: const CustomPlatformView(
+        creationParams: <String, dynamic>{},
+        scaleFactor: 1.5,
+      ),
+    );
+    final secondView = _SecondTestView(tester.view);
+
+    Widget tree({required bool inSecond}) => ViewCollection(
+      views: [
+        View(
+          view: tester.view,
+          child: inSecond ? const SizedBox.shrink() : webview,
+        ),
+        View(
+          view: secondView,
+          child: inSecond ? webview : const SizedBox.shrink(),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: false));
+    await tester.pump();
+    viewCalls.clear();
+
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: true));
+    await tester.pump();
+    expect(
+      viewCalls.where((call) => call.method == 'setHostView'),
+      hasLength(1),
+    );
+    expect(
+      viewCalls.where((call) => call.method == 'setHostView').single.arguments,
+      {
+        'windowHandle': 1000 + secondView.viewId,
+        'flutterViewHandle': 2000 + secondView.viewId,
+      },
+    );
+
+    // Move back while the first native rehost is still waiting for its reply.
+    // With no resolver, the main view must explicitly reset to the default host.
+    LinuxWebViewHostWindow.resolver = null;
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: false));
+    await tester.pump();
+    expect(
+      viewCalls.where((call) => call.method == 'setHostView'),
+      hasLength(1),
+    );
+
+    firstHostCall.complete();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+
+    final hostCalls = viewCalls.where((call) => call.method == 'setHostView');
+    expect(hostCalls.map((call) => call.arguments), [
+      {
+        'windowHandle': 1000 + secondView.viewId,
+        'flutterViewHandle': 2000 + secondView.viewId,
+      },
+      <String, dynamic>{},
+    ]);
+    final lastHostCallIndex = viewCalls.lastIndexWhere(
+      (call) => call.method == 'setHostView',
+    );
+    final sizeCalls = viewCalls
+        .asMap()
+        .entries
+        .where((entry) => entry.value.method == 'setSize')
+        .toList();
+    expect(sizeCalls, hasLength(1));
+    expect(sizeCalls.single.value.arguments, [800.0, 600.0, 1.5]);
+    expect(sizeCalls.single.key, greaterThan(lastHostCallIndex));
+    final offsetCallIndex = viewCalls.lastIndexWhere(
+      (call) => call.method == 'setTextureOffset',
+    );
+    expect(offsetCallIndex, greaterThan(lastHostCallIndex));
+  });
 }
