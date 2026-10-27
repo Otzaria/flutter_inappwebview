@@ -146,10 +146,18 @@ class WindowsWebViewEnvironment extends PlatformWebViewEnvironment
   }
 
   @override
-  Future<void> prewarm({WebViewEnvironmentSettings? settings}) async {
+  Future<WebViewEnvironmentPrewarmResult?> prewarm({
+    WebViewEnvironmentSettings? settings,
+  }) async {
     Map<String, dynamic> args = <String, dynamic>{};
     args.putIfAbsent('settings', () => settings?.toMap());
-    await _staticChannel.invokeMethod('prewarm', args);
+    final result = await _staticChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'prewarm',
+      args,
+    );
+    return WebViewEnvironmentPrewarmResult.fromMap(
+      result?.cast<String, dynamic>(),
+    );
   }
 
   @override

@@ -29,7 +29,7 @@ namespace flutter_inappwebview_plugin
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
     void createWebViewEnvironment(const std::string& id, std::unique_ptr<WebViewEnvironmentSettings> settings, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-    static void prewarm(std::shared_ptr<WebViewEnvironmentSettings> settings);
+    void prewarm(std::shared_ptr<WebViewEnvironmentSettings> settings, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void createOrGetDefaultWebViewEnvironment(const std::function<void(WebViewEnvironment*)> completionHandler);
     HWND getHWND()
     {
@@ -40,6 +40,11 @@ namespace flutter_inappwebview_plugin
     static std::optional<int> compareBrowserVersions(std::string version1, std::string version2);
   private:
     std::unique_ptr<WebViewEnvironment> defaultEnvironment_;
+    std::map<int64_t, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>> pendingPrewarms_;
+    int64_t lastPrewarmId_ = 0;
+
+    static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    void completePrewarm(int64_t id, const std::string& status, HRESULT hr, int64_t durationMs);
     WNDCLASS windowClass_ = {};
     HWND hwnd_ = nullptr;
   };

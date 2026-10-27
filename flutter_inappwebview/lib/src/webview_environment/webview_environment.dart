@@ -85,8 +85,9 @@ class WebViewEnvironment {
   ///{@macro flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm}
   ///
   ///{@macro flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm.supported_platforms}
-  static Future<void> prewarm({WebViewEnvironmentSettings? settings}) =>
-      PlatformWebViewEnvironment.static().prewarm(settings: settings);
+  static Future<WebViewEnvironmentPrewarmResult?> prewarm({
+    WebViewEnvironmentSettings? settings,
+  }) => PlatformWebViewEnvironment.static().prewarm(settings: settings);
 
   ///{@macro flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.onNewBrowserVersionAvailable}
   ///

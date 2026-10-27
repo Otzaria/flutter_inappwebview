@@ -1,4 +1,5 @@
 #include <atomic>
+#include <chrono>
 #include <DispatcherQueue.h>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
@@ -19,7 +20,7 @@ namespace flutter_inappwebview_plugin
     ChannelDelegate(plugin->registrar->messenger(), WebViewEnvironmentManager::METHOD_CHANNEL_NAME)
   {
     windowClass_.lpszClassName = WebViewEnvironmentManager::CLASS_NAME;
-    windowClass_.lpfnWndProc = &DefWindowProc;
+    windowClass_.lpfnWndProc = &WebViewEnvironmentManager::WndProc;
 
     RegisterClass(&windowClass_);
 
@@ -29,6 +30,9 @@ namespace flutter_inappwebview_plugin
       plugin->registrar->GetView()->GetNativeWindow(),
       nullptr,
       windowClass_.hInstance, nullptr);
+    if (hwnd_) {
+      SetWindowLongPtr(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    }
   }
 
   void WebViewEnvironmentManager::HandleMethodCall(const flutter::MethodCall<flutter::EncodableValue>& method_call,
@@ -45,8 +49,7 @@ namespace flutter_inappwebview_plugin
     }
     else if (string_equals(methodName, "prewarm")) {
       auto settingsMap = get_optional_fl_map_value<flutter::EncodableMap>(*arguments, "settings");
-      prewarm(settingsMap.has_value() ? std::make_shared<WebViewEnvironmentSettings>(settingsMap.value()) : nullptr);
-      result->Success();
+      prewarm(settingsMap.has_value() ? std::make_shared<WebViewEnvironmentSettings>(settingsMap.value()) : nullptr, std::move(result));
     }
     else if (string_equals(methodName, "getAvailableVersion")) {
       auto browserExecutableFolder = get_optional_fl_map_value<std::string>(*arguments, "browserExecutableFolder");
@@ -83,17 +86,72 @@ namespace flutter_inappwebview_plugin
     webViewEnvironments.insert({ id, std::move(webViewEnvironment) });
   }
 
+  namespace
+  {
+    struct PrewarmOutcome
+    {
+      int64_t id;
+      std::string status;
+      HRESULT hr;
+      int64_t durationMs;
+    };
+
+    const UINT prewarmDoneMessage = RegisterWindowMessage(L"FlutterInappwebviewPrewarmDone");
+  }
+
+  LRESULT CALLBACK WebViewEnvironmentManager::WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+  {
+    if (message == prewarmDoneMessage && prewarmDoneMessage != 0) {
+      std::unique_ptr<PrewarmOutcome> outcome(reinterpret_cast<PrewarmOutcome*>(lParam));
+      auto manager = reinterpret_cast<WebViewEnvironmentManager*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+      if (manager) {
+        manager->completePrewarm(outcome->id, outcome->status, outcome->hr, outcome->durationMs);
+      }
+      return 0;
+    }
+    return DefWindowProc(hwnd, message, wParam, lParam);
+  }
+
+  void WebViewEnvironmentManager::completePrewarm(int64_t id, const std::string& status, HRESULT hr, int64_t durationMs)
+  {
+    auto it = pendingPrewarms_.find(id);
+    if (it == pendingPrewarms_.end()) {
+      return;
+    }
+    auto result = std::move(it->second);
+    pendingPrewarms_.erase(it);
+    result->Success(flutter::EncodableMap{
+      {"status", make_fl_value(status)},
+      {"errorCode", make_fl_value(static_cast<int64_t>(hr))},
+      {"durationMs", make_fl_value(durationMs)}
+    });
+  }
+
   // The first environment in a process loads the runtime DLL synchronously on the
   // calling thread; a throwaway one here moves that load off the UI thread.
-  void WebViewEnvironmentManager::prewarm(std::shared_ptr<WebViewEnvironmentSettings> settings)
+  void WebViewEnvironmentManager::prewarm(std::shared_ptr<WebViewEnvironmentSettings> settings, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result)
   {
+    if (!hwnd_ || prewarmDoneMessage == 0) {
+      result->Success(flutter::EncodableMap{
+        {"status", make_fl_value(std::string("unavailable"))},
+        {"errorCode", make_fl_value(static_cast<int64_t>(E_FAIL))},
+        {"durationMs", make_fl_value(int64_t{ 0 })}
+      });
+      return;
+    }
+    auto id = ++lastPrewarmId_;
+    pendingPrewarms_.insert({ id, std::move(result) });
+    auto hwnd = hwnd_;
     try {
-      std::thread([settings]()
+      std::thread([settings, hwnd, id]()
         {
-          if (failedAndLog(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) {
-            return;
+          auto startedAt = std::chrono::steady_clock::now();
+          auto outcome = std::make_unique<PrewarmOutcome>(PrewarmOutcome{ id, "ok", S_OK, 0 });
+          outcome->hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+          if (FAILED(outcome->hr)) {
+            outcome->status = "com_init_failed";
           }
-          {
+          else {
             auto browserExecutableFolder = settings && settings->browserExecutableFolder.has_value()
               ? std::optional<std::wstring>(utf8_to_wide(settings->browserExecutableFolder.value())) : std::nullopt;
             auto userDataFolder = settings && settings->userDataFolder.has_value()
@@ -101,23 +159,35 @@ namespace flutter_inappwebview_plugin
             auto browserFolder = browserExecutableFolder.has_value() ? browserExecutableFolder->c_str() : nullptr;
 
             wil::unique_cotaskmem_string version;
-            if (succeededOrLog(GetAvailableCoreWebView2BrowserVersionString(browserFolder, &version)) && version) {
-              auto done = std::make_shared<std::atomic_bool>(false);
-              auto hr = CreateCoreWebView2EnvironmentWithOptions(
+            outcome->hr = GetAvailableCoreWebView2BrowserVersionString(browserFolder, &version);
+            if (FAILED(outcome->hr) || !version) {
+              outcome->status = "no_runtime";
+            }
+            else {
+              struct Completion
+              {
+                std::atomic_bool done = false;
+                HRESULT hr = E_PENDING;
+              };
+              auto completion = std::make_shared<Completion>();
+              outcome->hr = CreateCoreWebView2EnvironmentWithOptions(
                 browserFolder,
                 userDataFolder.has_value() ? userDataFolder->c_str() : nullptr,
                 WebViewEnvironment::createOptions(settings.get()).get(),
                 Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                  [done](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT
+                  [completion](HRESULT hr, ICoreWebView2Environment* environment) -> HRESULT
                   {
-                    failedLog(result);
-                    *done = true;
+                    completion->hr = hr;
+                    completion->done = true;
                     return S_OK;
                   }).Get());
-              if (succeededOrLog(hr)) {
+              if (FAILED(outcome->hr)) {
+                outcome->status = "create_failed";
+              }
+              else {
                 auto deadline = GetTickCount64() + 30000;
                 MSG msg;
-                while (!*done && GetTickCount64() < deadline) {
+                while (!completion->done && GetTickCount64() < deadline) {
                   if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
                     TranslateMessage(&msg);
                     DispatchMessage(&msg);
@@ -126,14 +196,29 @@ namespace flutter_inappwebview_plugin
                     MsgWaitForMultipleObjects(0, nullptr, FALSE, 50, QS_ALLINPUT);
                   }
                 }
+                if (!completion->done) {
+                  outcome->status = "timeout";
+                  outcome->hr = E_PENDING;
+                }
+                else if (FAILED(completion->hr)) {
+                  outcome->status = "create_failed";
+                  outcome->hr = completion->hr;
+                }
               }
             }
+            CoUninitialize();
           }
-          CoUninitialize();
+          failedLog(outcome->hr);
+          outcome->durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startedAt).count();
+          // Fails once the plugin is torn down; the outcome is then dropped.
+          if (PostMessage(hwnd, prewarmDoneMessage, 0, reinterpret_cast<LPARAM>(outcome.get()))) {
+            outcome.release();
+          }
         }).detach();
     }
     catch (const std::system_error& e) {
       debugLog("WebViewEnvironmentManager: cannot start prewarm thread: " + std::string(e.what()));
+      completePrewarm(id, "thread_failed", E_FAIL, 0);
     }
   }
 
@@ -186,6 +271,7 @@ namespace flutter_inappwebview_plugin
     plugin = nullptr;
     defaultEnvironment_ = nullptr;
     if (hwnd_) {
+      SetWindowLongPtr(hwnd_, GWLP_USERDATA, 0);
       DestroyWindow(hwnd_);
     }
   }

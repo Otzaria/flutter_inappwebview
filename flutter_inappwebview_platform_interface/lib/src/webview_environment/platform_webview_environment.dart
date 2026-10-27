@@ -290,7 +290,10 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
   ///A throwaway environment is created with [settings] and released right away;
   ///no browser process is started. Pass the same [settings] as the later [create],
   ///so that the same runtime is selected.
-  ///Returns immediately; failures are ignored. Does nothing on platforms that do not support it.
+  ///The returned future completes when the background work has finished; await it
+  ///before [create] so the UI thread does not block in the loader meanwhile.
+  ///Failures are reported in the result, never thrown. Returns `null` on platforms
+  ///that do not support it.
   ///{@endtemplate}
   ///
   ///{@macro flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm.supported_platforms}
@@ -303,7 +306,9 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
       ),
     ],
   )
-  Future<void> prewarm({WebViewEnvironmentSettings? settings}) async {}
+  Future<WebViewEnvironmentPrewarmResult?> prewarm({
+    WebViewEnvironmentSettings? settings,
+  }) async => null;
 
   ///{@template flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.onNewBrowserVersionAvailable}
   ///[onNewBrowserVersionAvailable] runs when a newer version of the WebView2 Runtime
@@ -523,4 +528,43 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
     method,
     platform: platform,
   );
+}
+
+///Outcome of [PlatformWebViewEnvironment.prewarm].
+class WebViewEnvironmentPrewarmResult {
+  const WebViewEnvironmentPrewarmResult({
+    required this.status,
+    required this.duration,
+    this.errorCode,
+  });
+
+  ///`ok`, or where it stopped: `no_runtime`, `com_init_failed`,
+  ///`create_failed`, `timeout`, `thread_failed` or `unavailable`.
+  final String status;
+
+  ///The HRESULT of the failed step, or of the successful creation.
+  final int? errorCode;
+
+  ///Time spent on the background thread.
+  final Duration duration;
+
+  bool get succeeded => status == 'ok';
+
+  static WebViewEnvironmentPrewarmResult? fromMap(Map<String, dynamic>? map) {
+    if (map == null) return null;
+    return WebViewEnvironmentPrewarmResult(
+      status: map['status'] as String? ?? 'unknown',
+      errorCode: map['errorCode'] as int?,
+      duration: Duration(milliseconds: map['durationMs'] as int? ?? 0),
+    );
+  }
+
+  @override
+  String toString() {
+    final code = errorCode;
+    final hr = code == null || code == 0
+        ? ''
+        : ' hr=0x${(code & 0xFFFFFFFF).toRadixString(16).padLeft(8, '0')}';
+    return '$status$hr ${duration.inMilliseconds}ms';
+  }
 }
