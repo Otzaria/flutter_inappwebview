@@ -96,12 +96,17 @@ namespace flutter_inappwebview_plugin
       int64_t durationMs;
     };
 
-    const UINT prewarmDoneMessage = RegisterWindowMessage(L"FlutterInappwebviewPrewarmDone");
+    // Registered lazily: User32 calls are not allowed during DllMain's CRT init.
+    UINT prewarmDoneMessage()
+    {
+      static const UINT message = RegisterWindowMessage(L"FlutterInappwebviewPrewarmDone");
+      return message;
+    }
   }
 
   LRESULT CALLBACK WebViewEnvironmentManager::WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
   {
-    if (message == prewarmDoneMessage && prewarmDoneMessage != 0) {
+    if (message == prewarmDoneMessage() && prewarmDoneMessage() != 0) {
       std::unique_ptr<PrewarmOutcome> outcome(reinterpret_cast<PrewarmOutcome*>(lParam));
       auto manager = reinterpret_cast<WebViewEnvironmentManager*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
       if (manager) {
@@ -131,7 +136,7 @@ namespace flutter_inappwebview_plugin
   // calling thread; a throwaway one here moves that load off the UI thread.
   void WebViewEnvironmentManager::prewarm(std::shared_ptr<WebViewEnvironmentSettings> settings, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result)
   {
-    if (!hwnd_ || prewarmDoneMessage == 0) {
+    if (!hwnd_ || prewarmDoneMessage() == 0) {
       result->Success(flutter::EncodableMap{
         {"status", make_fl_value(std::string("unavailable"))},
         {"errorCode", make_fl_value(static_cast<int64_t>(E_FAIL))},
@@ -211,7 +216,7 @@ namespace flutter_inappwebview_plugin
           failedLog(outcome->hr);
           outcome->durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startedAt).count();
           // Fails once the plugin is torn down; the outcome is then dropped.
-          if (PostMessage(hwnd, prewarmDoneMessage, 0, reinterpret_cast<LPARAM>(outcome.get()))) {
+          if (PostMessage(hwnd, prewarmDoneMessage(), 0, reinterpret_cast<LPARAM>(outcome.get()))) {
             outcome.release();
           }
         }).detach();
