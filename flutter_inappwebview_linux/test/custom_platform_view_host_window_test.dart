@@ -346,4 +346,55 @@ void main() {
     );
     expect(offsetCallIndex, greaterThan(lastHostCallIndex));
   });
+
+  testWidgets('pending creation must not reuse a destroyed intermediate host', (
+    tester,
+  ) async {
+    final nativeCreate = Completer<int>();
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(_managerChannel, (call) async {
+      managerCalls.add(call);
+      if (call.method == 'createInAppWebView') return nativeCreate.future;
+      return null;
+    });
+    final secondView = _SecondTestView(tester.view);
+    var secondAlive = true;
+    LinuxWebViewHostWindow.resolver = (viewId) =>
+        viewId == secondView.viewId && secondAlive
+        ? (windowHandle: 1099, flutterViewHandle: 2099)
+        : null;
+    final webview = KeyedSubtree(
+      key: GlobalKey(),
+      child: const CustomPlatformView(creationParams: <String, dynamic>{}),
+    );
+    Widget tree({required bool inSecond}) => ViewCollection(
+      views: [
+        View(
+          view: tester.view,
+          child: inSecond ? const SizedBox.shrink() : webview,
+        ),
+        View(
+          view: secondView,
+          child: inSecond ? webview : const SizedBox.shrink(),
+        ),
+      ],
+    );
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: false));
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: true));
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: false));
+    secondAlive = false;
+    await tester.pump();
+    nativeCreate.complete(7);
+    await tester.pump();
+    final hosts = viewCalls
+        .where((call) => call.method == 'setHostView')
+        .map((call) => call.arguments)
+        .toList();
+    expect(
+      hosts,
+      everyElement(isNot(containsPair('windowHandle', 1099))),
+      reason: 'secondary window has been destroyed before creation completed',
+    );
+  });
 }
