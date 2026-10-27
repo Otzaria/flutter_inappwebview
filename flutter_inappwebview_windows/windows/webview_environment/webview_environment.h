@@ -28,6 +28,7 @@ namespace flutter_inappwebview_plugin
     WebViewEnvironment(const FlutterInappwebviewWindowsPlugin* plugin, const std::string& id);
     ~WebViewEnvironment();
 
+    static wil::com_ptr<ICoreWebView2EnvironmentOptions> createOptions(const WebViewEnvironmentSettings* settings);
     void create(const std::unique_ptr<WebViewEnvironmentSettings> settings, const std::function<void(HRESULT)> completionHandler);
     wil::com_ptr<ICoreWebView2Environment> getEnvironment()
     {

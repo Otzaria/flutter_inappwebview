@@ -300,6 +300,20 @@ enum PlatformWebViewEnvironmentMethod {
   ///Use the [PlatformWebViewEnvironment.isMethodSupported] method to check if this method is supported at runtime.
   ///{@endtemplate}
   isSpellCheckingEnabled,
+
+  ///Can be used to check if the [PlatformWebViewEnvironment.prewarm] method is supported at runtime.
+  ///
+  ///{@template flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm.supported_platforms}
+  ///
+  ///**Officially Supported Platforms/Implementations**:
+  ///- Windows WebView2 ([Official API - CreateCoreWebView2EnvironmentWithOptions](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl?view=webview2-1.0.2210.55#createcorewebview2environmentwithoptions))
+  ///
+  ///**Parameters - Officially Supported Platforms/Implementations**:
+  ///- [settings]: all platforms
+  ///
+  ///Use the [PlatformWebViewEnvironment.isMethodSupported] method to check if this method is supported at runtime.
+  ///{@endtemplate}
+  prewarm,
 }
 
 extension _PlatformWebViewEnvironmentMethodSupported
@@ -359,6 +373,11 @@ extension _PlatformWebViewEnvironmentMethodSupported
       case PlatformWebViewEnvironmentMethod.isSpellCheckingEnabled:
         return ((kIsWeb && platform != null) || !kIsWeb) &&
             [TargetPlatform.linux].contains(platform ?? defaultTargetPlatform);
+      case PlatformWebViewEnvironmentMethod.prewarm:
+        return ((kIsWeb && platform != null) || !kIsWeb) &&
+            [
+              TargetPlatform.windows,
+            ].contains(platform ?? defaultTargetPlatform);
     }
   }
 }

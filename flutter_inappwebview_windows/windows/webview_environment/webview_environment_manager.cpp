@@ -1,6 +1,9 @@
+#include <atomic>
 #include <DispatcherQueue.h>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
+#include <thread>
+#include <wil/wrl.h>
 
 #include "../in_app_webview/in_app_webview_settings.h"
 #include "../utils/flutter.h"
@@ -40,6 +43,11 @@ namespace flutter_inappwebview_plugin
       auto settings = settingsMap.has_value() ? std::make_unique<WebViewEnvironmentSettings>(settingsMap.value()) : nullptr;
       createWebViewEnvironment(id, std::move(settings), std::move(result));
     }
+    else if (string_equals(methodName, "prewarm")) {
+      auto settingsMap = get_optional_fl_map_value<flutter::EncodableMap>(*arguments, "settings");
+      prewarm(settingsMap.has_value() ? std::make_shared<WebViewEnvironmentSettings>(settingsMap.value()) : nullptr);
+      result->Success();
+    }
     else if (string_equals(methodName, "getAvailableVersion")) {
       auto browserExecutableFolder = get_optional_fl_map_value<std::string>(*arguments, "browserExecutableFolder");
       result->Success(make_fl_value(getAvailableVersion(browserExecutableFolder)));
@@ -73,6 +81,60 @@ namespace flutter_inappwebview_plugin
         }
       });
     webViewEnvironments.insert({ id, std::move(webViewEnvironment) });
+  }
+
+  // The first environment in a process loads the runtime DLL synchronously on the
+  // calling thread; a throwaway one here moves that load off the UI thread.
+  void WebViewEnvironmentManager::prewarm(std::shared_ptr<WebViewEnvironmentSettings> settings)
+  {
+    try {
+      std::thread([settings]()
+        {
+          if (failedAndLog(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) {
+            return;
+          }
+          {
+            auto browserExecutableFolder = settings && settings->browserExecutableFolder.has_value()
+              ? std::optional<std::wstring>(utf8_to_wide(settings->browserExecutableFolder.value())) : std::nullopt;
+            auto userDataFolder = settings && settings->userDataFolder.has_value()
+              ? std::optional<std::wstring>(utf8_to_wide(settings->userDataFolder.value())) : std::nullopt;
+            auto browserFolder = browserExecutableFolder.has_value() ? browserExecutableFolder->c_str() : nullptr;
+
+            wil::unique_cotaskmem_string version;
+            if (succeededOrLog(GetAvailableCoreWebView2BrowserVersionString(browserFolder, &version)) && version) {
+              auto done = std::make_shared<std::atomic_bool>(false);
+              auto hr = CreateCoreWebView2EnvironmentWithOptions(
+                browserFolder,
+                userDataFolder.has_value() ? userDataFolder->c_str() : nullptr,
+                WebViewEnvironment::createOptions(settings.get()).get(),
+                Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+                  [done](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT
+                  {
+                    failedLog(result);
+                    *done = true;
+                    return S_OK;
+                  }).Get());
+              if (succeededOrLog(hr)) {
+                auto deadline = GetTickCount64() + 30000;
+                MSG msg;
+                while (!*done && GetTickCount64() < deadline) {
+                  if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&msg);
+                    DispatchMessage(&msg);
+                  }
+                  else {
+                    MsgWaitForMultipleObjects(0, nullptr, FALSE, 50, QS_ALLINPUT);
+                  }
+                }
+              }
+            }
+          }
+          CoUninitialize();
+        }).detach();
+    }
+    catch (const std::system_error& e) {
+      debugLog("WebViewEnvironmentManager: cannot start prewarm thread: " + std::string(e.what()));
+    }
   }
 
   void WebViewEnvironmentManager::createOrGetDefaultWebViewEnvironment(const std::function<void(WebViewEnvironment*)> completionHandler)

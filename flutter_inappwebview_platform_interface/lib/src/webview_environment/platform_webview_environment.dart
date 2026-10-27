@@ -283,6 +283,28 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
     );
   }
 
+  ///{@template flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm}
+  ///Starts loading the WebView2 Runtime into the app process on a background thread,
+  ///so that a later [create] on the UI thread does not pay for loading it.
+  ///
+  ///A throwaway environment is created with [settings] and released right away;
+  ///no browser process is started. Pass the same [settings] as the later [create],
+  ///so that the same runtime is selected.
+  ///Returns immediately; failures are ignored. Does nothing on platforms that do not support it.
+  ///{@endtemplate}
+  ///
+  ///{@macro flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm.supported_platforms}
+  @SupportedPlatforms(
+    platforms: [
+      WindowsPlatform(
+        apiName: 'CreateCoreWebView2EnvironmentWithOptions',
+        apiUrl:
+            'https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl?view=webview2-1.0.2210.55#createcorewebview2environmentwithoptions',
+      ),
+    ],
+  )
+  Future<void> prewarm({WebViewEnvironmentSettings? settings}) async {}
+
   ///{@template flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.onNewBrowserVersionAvailable}
   ///[onNewBrowserVersionAvailable] runs when a newer version of the WebView2 Runtime
   ///is installed and available using WebView2.

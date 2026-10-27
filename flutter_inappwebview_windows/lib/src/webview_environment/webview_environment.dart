@@ -146,6 +146,13 @@ class WindowsWebViewEnvironment extends PlatformWebViewEnvironment
   }
 
   @override
+  Future<void> prewarm({WebViewEnvironmentSettings? settings}) async {
+    Map<String, dynamic> args = <String, dynamic>{};
+    args.putIfAbsent('settings', () => settings?.toMap());
+    await _staticChannel.invokeMethod('prewarm', args);
+  }
+
+  @override
   Future<String?> getAvailableVersion({String? browserExecutableFolder}) async {
     Map<String, dynamic> args = <String, dynamic>{};
     args.putIfAbsent('browserExecutableFolder', () => browserExecutableFolder);

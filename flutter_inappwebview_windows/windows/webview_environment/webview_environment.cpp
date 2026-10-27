@@ -15,23 +15,8 @@ namespace flutter_inappwebview_plugin
     channelDelegate(std::make_unique<WebViewEnvironmentChannelDelegate>(this, plugin->registrar->messenger()))
   {}
 
-  void WebViewEnvironment::create(const std::unique_ptr<WebViewEnvironmentSettings> settings, const std::function<void(HRESULT)> completionHandler)
+  wil::com_ptr<ICoreWebView2EnvironmentOptions> WebViewEnvironment::createOptions(const WebViewEnvironmentSettings* settings)
   {
-    if (!plugin) {
-      if (completionHandler) {
-        completionHandler(E_FAIL);
-      }
-      return;
-    }
-
-    auto hwnd = plugin->webViewEnvironmentManager->getHWND();
-    if (!hwnd) {
-      if (completionHandler) {
-        completionHandler(E_FAIL);
-      }
-      return;
-    }
-
     auto options = Make<CoreWebView2EnvironmentOptions>();
     if (settings) {
       if (settings->additionalBrowserArguments.has_value()) {
@@ -84,11 +69,34 @@ namespace flutter_inappwebview_plugin
         options8->put_ScrollBarStyle(static_cast<COREWEBVIEW2_SCROLLBAR_STYLE>(settings->scrollbarStyle.value()));
       }
     }
+    wil::com_ptr<ICoreWebView2EnvironmentOptions> result;
+    options->QueryInterface(IID_PPV_ARGS(result.put()));
+    return result;
+  }
+
+  void WebViewEnvironment::create(const std::unique_ptr<WebViewEnvironmentSettings> settings, const std::function<void(HRESULT)> completionHandler)
+  {
+    if (!plugin) {
+      if (completionHandler) {
+        completionHandler(E_FAIL);
+      }
+      return;
+    }
+
+    auto hwnd = plugin->webViewEnvironmentManager->getHWND();
+    if (!hwnd) {
+      if (completionHandler) {
+        completionHandler(E_FAIL);
+      }
+      return;
+    }
+
+    auto options = createOptions(settings.get());
 
     auto hr = CreateCoreWebView2EnvironmentWithOptions(
       settings && settings->browserExecutableFolder.has_value() ? utf8_to_wide(settings->browserExecutableFolder.value()).c_str() : nullptr,
       settings && settings->userDataFolder.has_value() ? utf8_to_wide(settings->userDataFolder.value()).c_str() : nullptr,
-      options.Get(),
+      options.get(),
       Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
         [this, hwnd, completionHandler, alive = alive_.weak()](HRESULT result, wil::com_ptr<ICoreWebView2Environment> environment) -> HRESULT
         {

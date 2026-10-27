@@ -29,6 +29,7 @@ namespace flutter_inappwebview_plugin
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
     void createWebViewEnvironment(const std::string& id, std::unique_ptr<WebViewEnvironmentSettings> settings, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    static void prewarm(std::shared_ptr<WebViewEnvironmentSettings> settings);
     void createOrGetDefaultWebViewEnvironment(const std::function<void(WebViewEnvironment*)> completionHandler);
     HWND getHWND()
     {
