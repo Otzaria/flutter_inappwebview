@@ -566,22 +566,22 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     }
     // The widget was reparented into another window (e.g. a tab moved).
     _hostFlutterViewId = viewId;
-    final resolver = LinuxWebViewHostWindow.resolver;
-    // Sent even when the resolver returns null: a move back to the main view
-    // must leave the previous window, which may be destroyed right after.
-    final host = resolver?.call(viewId);
     final generation = ++_hostChangeGeneration;
     _hostViewSyncFuture = _hostViewSyncFuture
-        .then((_) => _rehost(host, generation))
+        .then((_) => _rehost(viewId, generation))
         .catchError((Object _) {});
   }
 
-  Future<void> _rehost(LinuxWebViewHostHandles? host, int generation) async {
+  Future<void> _rehost(int viewId, int generation) async {
     await _controller.ready;
     if (!mounted || generation != _hostChangeGeneration) {
       return;
     }
 
+    // Creation and earlier rehosts may finish after this window was destroyed
+    // or its native handles changed. Resolve only when this rehost can run.
+    // A null result must still reset the previous host to the default window.
+    final host = LinuxWebViewHostWindow.resolver?.call(viewId);
     await _controller._setHostView(host);
     if (!mounted || generation != _hostChangeGeneration) {
       return;

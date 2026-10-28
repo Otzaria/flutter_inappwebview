@@ -397,4 +397,126 @@ void main() {
       reason: 'secondary window has been destroyed before creation completed',
     );
   });
+
+  for (final targetDestroyed in [true, false]) {
+    testWidgets(
+      targetDestroyed
+          ? 'pending creation resolves a destroyed current host again'
+          : 'pending creation resolves replacement handles for the same view',
+      (tester) async {
+        final nativeCreate = Completer<int>();
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(_managerChannel, (call) async {
+          managerCalls.add(call);
+          if (call.method == 'createInAppWebView') return nativeCreate.future;
+          return null;
+        });
+        final secondView = _SecondTestView(tester.view);
+        LinuxWebViewHostHandles? secondHost = (
+          windowHandle: 1099,
+          flutterViewHandle: 2099,
+        );
+        LinuxWebViewHostWindow.resolver = (viewId) =>
+            viewId == secondView.viewId ? secondHost : null;
+        final webview = KeyedSubtree(
+          key: GlobalKey(),
+          child: const CustomPlatformView(creationParams: <String, dynamic>{}),
+        );
+        Widget tree({required bool inSecond}) => ViewCollection(
+          views: [
+            View(
+              view: tester.view,
+              child: inSecond ? const SizedBox.shrink() : webview,
+            ),
+            View(
+              view: secondView,
+              child: inSecond ? webview : const SizedBox.shrink(),
+            ),
+          ],
+        );
+        await tester.pumpWidget(wrapWithView: false, tree(inSecond: false));
+        await tester.pumpWidget(wrapWithView: false, tree(inSecond: true));
+        // The Flutter view id stays the same while its native handles become
+        // invalid or are replaced. The resolver is authoritative at dispatch.
+        secondHost = targetDestroyed
+            ? null
+            : (windowHandle: 3099, flutterViewHandle: 4099);
+        nativeCreate.complete(7);
+        await tester.pump();
+        await tester.pump();
+
+        final hostCall = viewCalls.singleWhere(
+          (call) => call.method == 'setHostView',
+        );
+        expect(
+          hostCall.arguments,
+          targetDestroyed
+              ? <String, dynamic>{}
+              : {'windowHandle': 3099, 'flutterViewHandle': 4099},
+        );
+      },
+    );
+  }
+
+  testWidgets('queued rehosting resolves the current handles when dispatched', (
+    tester,
+  ) async {
+    final secondView = _SecondTestView(tester.view);
+    LinuxWebViewHostHandles? firstHost = (
+      windowHandle: 1000,
+      flutterViewHandle: 2000,
+    );
+    LinuxWebViewHostWindow.resolver = (viewId) => viewId == secondView.viewId
+        ? (windowHandle: 1099, flutterViewHandle: 2099)
+        : firstHost;
+    final firstHostReply = Completer<void>();
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(_viewChannel, (call) async {
+      viewCalls.add(call);
+      if (call.method == 'setHostView' && !firstHostReply.isCompleted) {
+        await firstHostReply.future;
+      }
+      return null;
+    });
+    final webview = KeyedSubtree(
+      key: GlobalKey(),
+      child: const CustomPlatformView(creationParams: <String, dynamic>{}),
+    );
+    Widget tree({required bool inSecond}) => ViewCollection(
+      views: [
+        View(
+          view: tester.view,
+          child: inSecond ? const SizedBox.shrink() : webview,
+        ),
+        View(
+          view: secondView,
+          child: inSecond ? webview : const SizedBox.shrink(),
+        ),
+      ],
+    );
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: false));
+    await tester.pump();
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: true));
+    await tester.pump();
+    await tester.pumpWidget(wrapWithView: false, tree(inSecond: false));
+    expect(
+      viewCalls.where((call) => call.method == 'setHostView'),
+      hasLength(1),
+    );
+    firstHost = (windowHandle: 3000, flutterViewHandle: 4000);
+    firstHostReply.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(
+      viewCalls
+          .where((call) => call.method == 'setHostView')
+          .map((call) => call.arguments),
+      [
+        {'windowHandle': 1099, 'flutterViewHandle': 2099},
+        {'windowHandle': 3000, 'flutterViewHandle': 4000},
+      ],
+    );
+  });
 }
