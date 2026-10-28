@@ -3,7 +3,16 @@
 
 #include <flutter/standard_method_codec.h>
 #include <optional>
+#ifdef _MSC_VER
+// The SDK's custom scheme template shadows its own `value` member. Keep the
+// suppression inside the SDK header; project code still builds with /W4 /WX.
+#pragma warning(push)
+#pragma warning(disable: 4458)
+#endif
 #include <WebView2EnvironmentOptions.h>
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 #include <wrl.h>
 
 namespace flutter_inappwebview_plugin

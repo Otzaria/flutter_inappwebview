@@ -139,7 +139,7 @@ namespace flutter_inappwebview_plugin
       return;
     }
     auto operation = std::make_shared<PrewarmOperation>();
-    PendingPrewarm pending{ settingsMap, operation, {} };
+    PendingPrewarm pending(settingsMap, operation);
     pending.results.push_back(std::move(result));
     pendingPrewarms_.push_back(std::move(pending));
     try {

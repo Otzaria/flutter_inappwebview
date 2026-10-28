@@ -5,6 +5,7 @@
 #include <map>
 #include <vector>
 #include <string>
+#include <utility>
 #include <winrt/base.h>
 
 #include "../flutter_inappwebview_windows_plugin.h"
@@ -43,6 +44,17 @@ namespace flutter_inappwebview_plugin
   private:
     std::unique_ptr<WebViewEnvironment> defaultEnvironment_;
     struct PendingPrewarm {
+      PendingPrewarm(const flutter::EncodableMap& settingsValue,
+        std::shared_ptr<PrewarmOperation> operationValue)
+        : settings(settingsValue), operation(std::move(operationValue)) {}
+
+      // MethodResults have one owner. Explicitly disable copying so vector
+      // growth cannot select a synthesized copy constructor on MSVC.
+      PendingPrewarm(const PendingPrewarm&) = delete;
+      PendingPrewarm& operator=(const PendingPrewarm&) = delete;
+      PendingPrewarm(PendingPrewarm&&) = default;
+      PendingPrewarm& operator=(PendingPrewarm&&) = default;
+
       flutter::EncodableMap settings;
       std::shared_ptr<PrewarmOperation> operation;
       std::vector<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>> results;
