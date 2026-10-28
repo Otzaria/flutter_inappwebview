@@ -41,9 +41,12 @@ namespace flutter_inappwebview_plugin
       }
       wil::com_ptr<ICoreWebView2EnvironmentOptions4> options4;
       if (succeededOrLog(options->QueryInterface(IID_PPV_ARGS(&options4))) && settings->customSchemeRegistrations.has_value()) {
-        std::vector<ICoreWebView2CustomSchemeRegistration*> registrations = {};
-        for (auto& customSchemeRegistration : settings->customSchemeRegistrations.value()) {
-          registrations.push_back(std::move(customSchemeRegistration->toWebView2CustomSchemeRegistration()));
+        std::vector<ComPtr<CoreWebView2CustomSchemeRegistration>> owners;
+        std::vector<ICoreWebView2CustomSchemeRegistration*> registrations;
+        for (const auto& customSchemeRegistration : settings->customSchemeRegistrations.value()) {
+          auto registration = customSchemeRegistration->toWebView2CustomSchemeRegistration();
+          registrations.push_back(registration.Get());
+          owners.push_back(std::move(registration));
         }
         options4->SetCustomSchemeRegistrations(static_cast<UINT32>(registrations.size()), registrations.data());
       }

@@ -290,8 +290,13 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
   ///A throwaway environment is created with [settings] and released right away;
   ///no browser process is started. Pass the same [settings] as the later [create],
   ///so that the same runtime is selected.
-  ///The returned future completes when the background work has finished; await it
-  ///before [create] so the UI thread does not block in the loader meanwhile.
+  ///The returned future completes when the background work has finished or its
+  ///30-second deadline expires. Await a successful result before [create] so the
+  ///UI thread does not block in the loader meanwhile. The synchronous runtime
+  ///loader cannot be interrupted; after a timeout its worker may still be running.
+  ///Concurrent calls with identical settings share the same in-flight work.
+  ///Call once per runtime/settings combination before creating the first view;
+  ///successful results are not cached.
   ///Failures are reported in the result, never thrown. Returns `null` on platforms
   ///that do not support it.
   ///{@endtemplate}
@@ -545,7 +550,7 @@ class WebViewEnvironmentPrewarmResult {
   ///The HRESULT of the failed step, or of the successful creation.
   final int? errorCode;
 
-  ///Time spent on the background thread.
+  ///Elapsed time until completion or timeout.
   final Duration duration;
 
   bool get succeeded => status == 'ok';

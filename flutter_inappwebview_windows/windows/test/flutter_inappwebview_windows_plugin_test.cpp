@@ -8,10 +8,12 @@
 #include "custom_platform_view/frame_compare_gate.h"
 #include "surface_pool_slot_test_cases.h"
 #include "one_shot_callback_test_cases.h"
+#include "prewarm_operation_test_cases.h"
 #include "in_app_webview/webview_visibility_state.h"
 #include "plugin_scripts_js/javascript_bridge_message.h"
 #include "types/base_callback_result.h"
 #include "types/lifetime_token.h"
+#include "types/custom_scheme_registration.h"
 #include "utils/flutter_view_hwnd.h"
 
 namespace flutter_inappwebview_plugin::test {
@@ -469,3 +471,27 @@ TEST(PendingWebViewHosts, SurvivesSourceWindowClosureAndReattaches) {
 }
 
 }  // namespace flutter_inappwebview_plugin::test
+
+TEST(PrewarmOperation, CompletionTimeoutAndWorkerLifetime) {
+  flutter_inappwebview_plugin::test::runPrewarmOperationTests();
+}
+
+TEST(CustomSchemeRegistration, OwnsConvertedOriginsAndReturnedComReference) {
+  const std::vector<std::string> allowedOrigins{
+    "https://a.example", "https://long-enough-to-require-a-heap-allocation.example"
+  };
+  flutter_inappwebview_plugin::CustomSchemeRegistration registration(
+    "test", allowedOrigins, true, true);
+  auto native = registration.toWebView2CustomSchemeRegistration();
+  ASSERT_NE(native.Get(), nullptr);
+  EXPECT_EQ(native->AddRef(), 2u);
+  EXPECT_EQ(native->Release(), 1u);
+  UINT32 count = 0;
+  LPWSTR* origins = nullptr;
+  ASSERT_EQ(native->GetAllowedOrigins(&count, &origins), S_OK);
+  ASSERT_EQ(count, 2u);
+  EXPECT_STREQ(origins[0], L"https://a.example");
+  EXPECT_STREQ(origins[1], L"https://long-enough-to-require-a-heap-allocation.example");
+  for (UINT32 index = 0; index < count; ++index) CoTaskMemFree(origins[index]);
+  CoTaskMemFree(origins);
+}

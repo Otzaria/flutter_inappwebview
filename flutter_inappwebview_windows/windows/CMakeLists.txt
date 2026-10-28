@@ -221,6 +221,7 @@ list(APPEND PLUGIN_SOURCES
   "webview_environment/webview_environment.h"
   "webview_environment/webview_environment_manager.cpp"
   "webview_environment/webview_environment_manager.h"
+  "webview_environment/prewarm_operation.h"
   "webview_environment/webview_environment_channel_delegate.cpp"
   "webview_environment/webview_environment_channel_delegate.h"
   "in_app_webview/user_content_controller.cpp"
@@ -364,10 +365,13 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(${TEST_RUNNER}
   test/flutter_inappwebview_windows_plugin_test.cpp
+  types/custom_scheme_registration.cpp
 )
 apply_standard_settings(${TEST_RUNNER})
 target_include_directories(${TEST_RUNNER} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(${TEST_RUNNER} PRIVATE flutter flutter_wrapper_plugin gtest_main)
+target_link_libraries(${TEST_RUNNER} PRIVATE ${CMAKE_BINARY_DIR}/packages/Microsoft.Web.WebView2/build/native/Microsoft.Web.WebView2.targets)
+target_link_libraries(${TEST_RUNNER} PRIVATE ole32)
 target_link_libraries(${TEST_RUNNER} PRIVATE ${CMAKE_BINARY_DIR}/packages/nlohmann.json/build/native/nlohmann.json.targets)
 
 # Enable automatic test discovery. The default 5s DISCOVERY_TIMEOUT is

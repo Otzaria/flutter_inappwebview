@@ -4,6 +4,7 @@
 #include <flutter/standard_method_codec.h>
 #include <optional>
 #include <WebView2EnvironmentOptions.h>
+#include <wrl.h>
 
 namespace flutter_inappwebview_plugin
 {
@@ -20,7 +21,7 @@ namespace flutter_inappwebview_plugin
     ~CustomSchemeRegistration() = default;
 
     flutter::EncodableMap toEncodableMap() const;
-    CoreWebView2CustomSchemeRegistration* toWebView2CustomSchemeRegistration() const;
+    Microsoft::WRL::ComPtr<CoreWebView2CustomSchemeRegistration> toWebView2CustomSchemeRegistration() const;
   };
 }
 
