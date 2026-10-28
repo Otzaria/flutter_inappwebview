@@ -1,5 +1,6 @@
 ## 1.4.0-beta.3
 
+- Added `JavaScriptHandlerJsonResult` so a JavaScript handler can return already-encoded JSON without decoding and re-encoding it on the UI isolate
 - Added the Windows `ProcessFailedReason` values `NORMAL_EXIT`, `ABNORMAL_EXIT` and
   `INTEGRITY_FAILURE` reported by newer WebView2 runtimes.
 - Added `PlatformInAppWebViewController.setBackgroundColor` for Android.
