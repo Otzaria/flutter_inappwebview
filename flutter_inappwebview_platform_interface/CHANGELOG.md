@@ -2,6 +2,7 @@
 
 - Documented Android background startup support and platform-specific prewarm settings, caching and deadlines.
 - Added `WebViewEnvironmentPrewarmResult` and the best-effort `PlatformWebViewEnvironment.prewarm` API (Windows; other implementations return `null`).
+- Added `JavaScriptHandlerJsonResult` so a JavaScript handler can return already-encoded JSON without decoding and re-encoding it on the UI isolate
 - Added the Windows `ProcessFailedReason` values `NORMAL_EXIT`, `ABNORMAL_EXIT` and
   `INTEGRITY_FAILURE` reported by newer WebView2 runtimes.
 - Added `PlatformInAppWebViewController.setBackgroundColor` for Android.
