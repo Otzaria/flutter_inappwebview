@@ -1,5 +1,7 @@
 ## 0.7.0-beta.3
 
+- Added best-effort WebView2 runtime prewarming with shared in-flight work, a total deadline, and completion that survives worker or message-delivery failures.
+- Kept custom scheme origins alive during conversion and released temporary registration references.
 - Fixed a crash of the whole app when a page called `callHandler` with a name that has no Dart handler.
 - Fixed `onProcessFailed`, `onAcceleratorKeyPressed` and `onShowFileChooser` never reaching Dart; `onShowFileChooser` has no WebView2 event and stays unsupported.
 - Fixed `ProcessFailedDetail.frameInfos` skipping the first and every second frame.

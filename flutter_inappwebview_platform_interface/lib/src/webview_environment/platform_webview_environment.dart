@@ -283,6 +283,38 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
     );
   }
 
+  ///{@template flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm}
+  ///Starts loading the WebView2 Runtime into the app process on a background thread,
+  ///so that a later [create] on the UI thread does not pay for loading it.
+  ///
+  ///A throwaway environment is created with [settings] and released right away;
+  ///no browser process is started. Pass the same [settings] as the later [create],
+  ///so that the same runtime is selected.
+  ///The returned future completes when the background work has finished or its
+  ///30-second deadline expires. Await a successful result before [create] so the
+  ///UI thread does not block in the loader meanwhile. The synchronous runtime
+  ///loader cannot be interrupted; after a timeout its worker may still be running.
+  ///Concurrent calls with identical settings share the same in-flight work.
+  ///Call once per runtime/settings combination before creating the first view;
+  ///successful results are not cached.
+  ///Failures are reported in the result, never thrown. Returns `null` on platforms
+  ///that do not support it.
+  ///{@endtemplate}
+  ///
+  ///{@macro flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm.supported_platforms}
+  @SupportedPlatforms(
+    platforms: [
+      WindowsPlatform(
+        apiName: 'CreateCoreWebView2EnvironmentWithOptions',
+        apiUrl:
+            'https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl?view=webview2-1.0.2210.55#createcorewebview2environmentwithoptions',
+      ),
+    ],
+  )
+  Future<WebViewEnvironmentPrewarmResult?> prewarm({
+    WebViewEnvironmentSettings? settings,
+  }) async => null;
+
   ///{@template flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.onNewBrowserVersionAvailable}
   ///[onNewBrowserVersionAvailable] runs when a newer version of the WebView2 Runtime
   ///is installed and available using WebView2.
@@ -501,4 +533,43 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
     method,
     platform: platform,
   );
+}
+
+///Outcome of [PlatformWebViewEnvironment.prewarm].
+class WebViewEnvironmentPrewarmResult {
+  const WebViewEnvironmentPrewarmResult({
+    required this.status,
+    required this.duration,
+    this.errorCode,
+  });
+
+  ///`ok`, or where it stopped: `no_runtime`, `com_init_failed`,
+  ///`create_failed`, `timeout`, `thread_failed` or `unavailable`.
+  final String status;
+
+  ///The HRESULT of the failed step, or of the successful creation.
+  final int? errorCode;
+
+  ///Elapsed time until completion or timeout.
+  final Duration duration;
+
+  bool get succeeded => status == 'ok';
+
+  static WebViewEnvironmentPrewarmResult? fromMap(Map<String, dynamic>? map) {
+    if (map == null) return null;
+    return WebViewEnvironmentPrewarmResult(
+      status: map['status'] as String? ?? 'unknown',
+      errorCode: map['errorCode'] as int?,
+      duration: Duration(milliseconds: map['durationMs'] as int? ?? 0),
+    );
+  }
+
+  @override
+  String toString() {
+    final code = errorCode;
+    final hr = code == null || code == 0
+        ? ''
+        : ' hr=0x${(code & 0xFFFFFFFF).toRadixString(16).padLeft(8, '0')}';
+    return '$status$hr ${duration.inMilliseconds}ms';
+  }
 }

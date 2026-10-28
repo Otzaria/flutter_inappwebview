@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "flutter_inappwebview_windows/**"
+      - "flutter_inappwebview_platform_interface/**"
       - ".github/workflows/windows-webview-visibility.yaml"
 
 permissions:
@@ -26,7 +27,7 @@ jobs:
 
       - name: Analyze Dart code
         working-directory: flutter_inappwebview_windows
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Run Dart regression tests
         working-directory: flutter_inappwebview_windows

@@ -63,6 +63,26 @@ Send a submission request to the [Submit App](https://inappwebview.dev/submit-ap
 
 ## Installation
 
+### Otzaria fork
+
+This fork is distributed from Git. Its platform packages use sibling path
+dependencies so the API and native implementations come from the same commit.
+They are marked `publish_to: none`; publishing separate packages requires
+replacing those paths with compatible published versions first.
+
+```yaml
+dependencies:
+  flutter_inappwebview:
+    git:
+      url: https://github.com/Otzaria/flutter_inappwebview.git
+      ref: master # Prefer a tested commit SHA in production.
+      path: flutter_inappwebview
+```
+
+Do not combine these packages with overrides pointing to published platform
+implementations or a different Git revision.
+
+
 Add `flutter_inappwebview` as a [dependency in your pubspec.yaml file](https://flutter.io/using-packages/).
 
 ### Platform Installation Setup:

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview_platform_interface/flutter_inappwebview_platform_interface.dart';
@@ -143,6 +145,34 @@ class WindowsWebViewEnvironment extends PlatformWebViewEnvironment
     env.handler = env.handleMethod;
     env.initMethodCallHandler();
     return env;
+  }
+
+  @override
+  Future<WebViewEnvironmentPrewarmResult?> prewarm({
+    WebViewEnvironmentSettings? settings,
+  }) async {
+    Map<String, dynamic> args = <String, dynamic>{};
+    args.putIfAbsent('settings', () => settings?.toMap());
+    final stopwatch = Stopwatch()..start();
+    try {
+      final result = await _staticChannel
+          .invokeMethod<Map<dynamic, dynamic>>('prewarm', args)
+          .timeout(const Duration(seconds: 31));
+      return WebViewEnvironmentPrewarmResult.fromMap(
+        result?.cast<String, dynamic>(),
+      );
+    } on TimeoutException {
+      return WebViewEnvironmentPrewarmResult(
+        status: 'timeout',
+        duration: stopwatch.elapsed,
+      );
+    } catch (_) {
+      // Prewarming is optional, including with an older/missing native plugin.
+      return WebViewEnvironmentPrewarmResult(
+        status: 'unavailable',
+        duration: stopwatch.elapsed,
+      );
+    }
   }
 
   @override

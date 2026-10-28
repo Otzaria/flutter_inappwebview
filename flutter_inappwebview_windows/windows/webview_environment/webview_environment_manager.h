@@ -3,12 +3,14 @@
 
 #include <flutter/method_channel.h>
 #include <map>
+#include <vector>
 #include <string>
 #include <winrt/base.h>
 
 #include "../flutter_inappwebview_windows_plugin.h"
 #include "../types/channel_delegate.h"
 #include "webview_environment.h"
+#include "prewarm_operation.h"
 
 namespace flutter_inappwebview_plugin
 {
@@ -29,6 +31,7 @@ namespace flutter_inappwebview_plugin
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
     void createWebViewEnvironment(const std::string& id, std::unique_ptr<WebViewEnvironmentSettings> settings, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void prewarm(std::shared_ptr<WebViewEnvironmentSettings> settings, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void createOrGetDefaultWebViewEnvironment(const std::function<void(WebViewEnvironment*)> completionHandler);
     HWND getHWND()
     {
@@ -39,6 +42,16 @@ namespace flutter_inappwebview_plugin
     static std::optional<int> compareBrowserVersions(std::string version1, std::string version2);
   private:
     std::unique_ptr<WebViewEnvironment> defaultEnvironment_;
+    struct PendingPrewarm {
+      flutter::EncodableMap settings;
+      std::shared_ptr<PrewarmOperation> operation;
+      std::vector<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>> results;
+    };
+    std::vector<PendingPrewarm> pendingPrewarms_;
+    static constexpr UINT_PTR prewarmTimerId_ = 1;
+
+    static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    void drainPrewarms();
     WNDCLASS windowClass_ = {};
     HWND hwnd_ = nullptr;
   };
