@@ -1,5 +1,6 @@
 ## 1.4.0-beta.3
 
+- Documented Android background startup support and platform-specific prewarm settings, caching and deadlines.
 - Added `WebViewEnvironmentPrewarmResult` and the best-effort `PlatformWebViewEnvironment.prewarm` API (Windows; other implementations return `null`).
 - Added the Windows `ProcessFailedReason` values `NORMAL_EXIT`, `ABNORMAL_EXIT` and
   `INTEGRITY_FAILURE` reported by newer WebView2 runtimes.

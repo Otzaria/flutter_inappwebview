@@ -1,5 +1,12 @@
 ## 1.2.0-beta.3
 
+- Added opt-in `WebViewEnvironment.prewarm` using AndroidX 1.14's experimental
+  async startup API with UI startup tasks disabled. Apply `ProcessGlobalConfig`
+  first and await prewarming before other WebView APIs for the greatest benefit.
+  This warms only background-capable work, creates no WebView, and ignores
+  Windows environment settings. Calls share the result within each engine;
+  failures, detach and a 30-second timeout complete without throwing.
+
 - Added creation-stage context to WebView constructor failures while preserving the original exception cause and Flutter error delivery.
 - Cancelled pending JavaScript callbacks and stale queued evaluations when their document is replaced or disposed.
 - Added `InAppWebViewController.setBackgroundColor`, retaining the selected

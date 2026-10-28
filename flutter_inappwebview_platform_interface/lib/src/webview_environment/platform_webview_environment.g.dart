@@ -306,10 +306,13 @@ enum PlatformWebViewEnvironmentMethod {
   ///{@template flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm.supported_platforms}
   ///
   ///**Officially Supported Platforms/Implementations**:
+  ///- Android WebView ([Official API - WebViewCompat.startUpWebView](https://developer.android.com/reference/androidx/webkit/WebViewCompat)):
+  ///    - Uses the AndroidX 1.14 experimental API with UI startup tasks disabled.
   ///- Windows WebView2 ([Official API - CreateCoreWebView2EnvironmentWithOptions](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl?view=webview2-1.0.2210.55#createcorewebview2environmentwithoptions))
   ///
   ///**Parameters - Officially Supported Platforms/Implementations**:
-  ///- [settings]: all platforms
+  ///- [settings]:
+  ///    - Windows WebView2
   ///
   ///Use the [PlatformWebViewEnvironment.isMethodSupported] method to check if this method is supported at runtime.
   ///{@endtemplate}
@@ -376,6 +379,7 @@ extension _PlatformWebViewEnvironmentMethodSupported
       case PlatformWebViewEnvironmentMethod.prewarm:
         return ((kIsWeb && platform != null) || !kIsWeb) &&
             [
+              TargetPlatform.android,
               TargetPlatform.windows,
             ].contains(platform ?? defaultTargetPlatform);
     }

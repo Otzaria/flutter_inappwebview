@@ -284,19 +284,24 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
   }
 
   ///{@template flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm}
-  ///Starts loading the WebView2 Runtime into the app process on a background thread,
-  ///so that a later [create] on the UI thread does not pay for loading it.
+  ///Preloads supported WebView startup work before creating the first view.
   ///
-  ///A throwaway environment is created with [settings] and released right away;
-  ///no browser process is started. Pass the same [settings] as the later [create],
-  ///so that the same runtime is selected.
-  ///The returned future completes when the background work has finished or its
-  ///30-second deadline expires. Await a successful result before [create] so the
-  ///UI thread does not block in the loader meanwhile. The synchronous runtime
-  ///loader cannot be interrupted; after a timeout its worker may still be running.
-  ///Concurrent calls with identical settings share the same in-flight work.
-  ///Call once per runtime/settings combination before creating the first view;
-  ///successful results are not cached.
+  ///On Windows, a temporary WebView2 environment is created on a background STA
+  ///and released without creating a view. Pass the same [settings] as the later
+  ///[create] to select the same runtime. Concurrent calls with identical settings
+  ///share in-flight work; completed results are not cached. Await prewarming
+  ///before [create] to avoid competing with the runtime loader on the UI thread.
+  ///
+  ///On Android, AndroidX 1.14's experimental startup API warms only work that
+  ///can run in the background, with UI startup tasks disabled. No WebView is
+  ///created, and the first view still performs remaining UI startup work.
+  ///Apply ProcessGlobalConfig first, then await prewarming before other WebView
+  ///APIs. Windows [settings] are ignored. All calls in the same Flutter engine
+  ///reuse its first outcome, including failures and timeouts.
+  ///
+  ///Native work has a 30-second deadline. Dart also bounds missing native replies
+  ///at 31 seconds on Windows and 35 seconds on Android. The runtime loader cannot
+  ///be interrupted, so a worker may still be running after a timeout.
   ///Failures are reported in the result, never thrown. Returns `null` on platforms
   ///that do not support it.
   ///{@endtemplate}
@@ -304,6 +309,13 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
   ///{@macro flutter_inappwebview_platform_interface.PlatformWebViewEnvironment.prewarm.supported_platforms}
   @SupportedPlatforms(
     platforms: [
+      AndroidPlatform(
+        apiName: 'WebViewCompat.startUpWebView',
+        apiUrl:
+            'https://developer.android.com/reference/androidx/webkit/WebViewCompat',
+        note:
+            'Uses the AndroidX 1.14 experimental API with UI startup tasks disabled.',
+      ),
       WindowsPlatform(
         apiName: 'CreateCoreWebView2EnvironmentWithOptions',
         apiUrl:
@@ -312,6 +324,7 @@ abstract class PlatformWebViewEnvironment extends PlatformInterface
     ],
   )
   Future<WebViewEnvironmentPrewarmResult?> prewarm({
+    @SupportedPlatforms(platforms: [WindowsPlatform()])
     WebViewEnvironmentSettings? settings,
   }) async => null;
 
@@ -547,10 +560,11 @@ class WebViewEnvironmentPrewarmResult {
   ///`create_failed`, `timeout`, `thread_failed` or `unavailable`.
   final String status;
 
-  ///The HRESULT of the failed step, or of the successful creation.
+  ///Windows HRESULT of the failed step or successful creation; null on Android.
   final int? errorCode;
 
-  ///Elapsed time until completion or timeout.
+  ///Elapsed time until completion or timeout. Android reuses the first outcome's
+  ///duration when returning a cached result.
   final Duration duration;
 
   bool get succeeded => status == 'ok';
