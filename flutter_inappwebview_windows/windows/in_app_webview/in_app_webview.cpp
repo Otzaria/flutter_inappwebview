@@ -4716,13 +4716,16 @@ namespace flutter_inappwebview_plugin
       failedLog(webView->Stop());
     }
     HWND parentWindow = nullptr;
-    if (webViewCompositionController && webViewController && succeededOrLog(webViewController->get_ParentWindow(&parentWindow))) {
-      // if it's an InAppWebView (so webViewCompositionController will be not a nullptr!),
-      // then destroy the Window created with it
-      DestroyWindow(parentWindow);
+    if (webViewCompositionController && webViewController) {
+      failedLog(webViewController->get_ParentWindow(&parentWindow));
     }
     if (webViewController) {
       failedLog(webViewController->Close());
+    }
+    // Close before destroying the parent: otherwise WebView2 closes itself inside
+    // DestroyWindow and can block the UI thread for seconds.
+    if (parentWindow) {
+      DestroyWindow(parentWindow);
     }
     if (hostWindow_) {
       DestroyWindow(hostWindow_);
