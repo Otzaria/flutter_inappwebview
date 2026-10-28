@@ -7,10 +7,7 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 cxx=${CXX:-c++}
 set --
 if [ "$(uname -s)" = Darwin ]; then
-  sdkroot=${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}
-  if [ ! -d "$sdkroot" ]; then
-    sdkroot=$(xcrun --show-sdk-path)
-  fi
+  sdkroot=${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}
   set -- -isysroot "$sdkroot"
 fi
 
