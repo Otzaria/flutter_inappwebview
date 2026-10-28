@@ -170,6 +170,168 @@ void main() {
 
   for (final hwndMode in [false, true]) {
     testWidgets(
+      '${hwndMode ? 'HWND' : 'composition'} rehosts stay ordered and skip superseded targets',
+      (tester) async {
+        final firstReply = Completer<void>();
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(IN_APP_WEBVIEW_STATIC_CHANNEL, (
+          call,
+        ) async {
+          pluginCalls.add(call);
+          return call.method == 'createInAppWebView'
+              ? (hwndMode
+                    ? {'id': _kTextureId, 'renderMode': 'hwnd'}
+                    : _kTextureId)
+              : null;
+        });
+        messenger.setMockMethodCallHandler(_viewChannel, (call) async {
+          viewCalls.add(call);
+          if (call.method == 'setFlutterViewId' && !firstReply.isCompleted) {
+            await firstReply.future;
+          }
+          return null;
+        });
+        final secondary = _SecondaryTestView(tester.view);
+        final key = GlobalKey();
+        Widget host(bool inSecondary) {
+          final webView = Directionality(
+            key: key,
+            textDirection: TextDirection.ltr,
+            child: const CustomPlatformView(
+              creationParams: <String, dynamic>{},
+            ),
+          );
+          return ViewCollection(
+            views: [
+              View(
+                view: tester.view,
+                child: inSecondary ? const SizedBox() : webView,
+              ),
+              View(
+                view: secondary,
+                child: inSecondary ? webView : const SizedBox(),
+              ),
+            ],
+          );
+        }
+
+        await tester.pumpWidget(host(false), wrapWithView: false);
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(host(true), wrapWithView: false);
+        await tester.pumpWidget(host(false), wrapWithView: false);
+        await tester.pumpWidget(host(true), wrapWithView: false);
+        expect(
+          viewCalls.where((call) => call.method == 'setFlutterViewId'),
+          hasLength(1),
+        );
+        firstReply.complete();
+        await tester.pumpAndSettle();
+
+        expect(
+          viewCalls
+              .where((call) => call.method == 'setFlutterViewId')
+              .map((call) => call.arguments),
+          [7, 7],
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'disposed pending ${hwndMode ? 'HWND' : 'composition'} creation never reparents',
+      (tester) async {
+        final creation = Completer<dynamic>();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(IN_APP_WEBVIEW_STATIC_CHANNEL, (
+              call,
+            ) async {
+              pluginCalls.add(call);
+              return call.method == 'createInAppWebView'
+                  ? creation.future
+                  : null;
+            });
+        final key = GlobalKey();
+        final webView = Directionality(
+          key: key,
+          textDirection: TextDirection.ltr,
+          child: const CustomPlatformView(creationParams: <String, dynamic>{}),
+        );
+        await tester.pumpWidget(
+          View(view: _SecondaryTestView(tester.view), child: webView),
+          wrapWithView: false,
+        );
+        await tester.pumpWidget(
+          View(view: tester.view, child: webView),
+          wrapWithView: false,
+        );
+        await tester.pumpWidget(const SizedBox());
+        creation.complete(
+          hwndMode ? {'id': _kTextureId, 'renderMode': 'hwnd'} : _kTextureId,
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          viewCalls.where((call) => call.method == 'setFlutterViewId'),
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'pending ${hwndMode ? 'HWND' : 'composition'} creation skips a closed intermediate view',
+      (tester) async {
+        final creation = Completer<dynamic>();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(IN_APP_WEBVIEW_STATIC_CHANNEL, (
+              call,
+            ) async {
+              pluginCalls.add(call);
+              return call.method == 'createInAppWebView'
+                  ? creation.future
+                  : null;
+            });
+        final secondary = _SecondaryTestView(tester.view);
+        final key = GlobalKey();
+        Widget host(bool inSecondary) {
+          final webView = Directionality(
+            key: key,
+            textDirection: TextDirection.ltr,
+            child: const CustomPlatformView(
+              creationParams: <String, dynamic>{},
+            ),
+          );
+          return ViewCollection(
+            views: [
+              View(
+                view: tester.view,
+                child: inSecondary ? const SizedBox() : webView,
+              ),
+              if (inSecondary) View(view: secondary, child: webView),
+            ],
+          );
+        }
+
+        await tester.pumpWidget(host(false), wrapWithView: false);
+        await tester.pumpWidget(host(true), wrapWithView: false);
+        await tester.pumpWidget(host(false), wrapWithView: false);
+        creation.complete(
+          hwndMode ? {'id': _kTextureId, 'renderMode': 'hwnd'} : _kTextureId,
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          viewCalls
+              .where((call) => call.method == 'setFlutterViewId')
+              .map((call) => call.arguments),
+          [tester.view.viewId],
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
       'pending ${hwndMode ? 'HWND' : 'composition'} creation follows its closed source view',
       (tester) async {
         final creation = Completer<dynamic>();

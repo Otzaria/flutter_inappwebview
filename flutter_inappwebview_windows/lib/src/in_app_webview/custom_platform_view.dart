@@ -279,6 +279,10 @@ class CustomPlatformViewController
   /// widget was reparented into another view.
   Future<void> setFlutterViewId(int viewId) async {
     await _creatingCompleter.future;
+    return _setFlutterViewId(viewId);
+  }
+
+  Future<void> _setFlutterViewId(int viewId) async {
     if (_isDisposed) {
       return;
     }
@@ -522,6 +526,8 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   // The view hosting this widget; null until the first dependency pass.
   FlutterView? _flutterView;
   bool _initializeRequested = false;
+  int _hostChangeGeneration = 0;
+  Future<void> _hostChangeFuture = Future<void>.value();
 
   @override
   void initState() {
@@ -584,13 +590,22 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
       return;
     }
     if (view != null && view.viewId != previousViewId) {
-      // Reparented into another window (e.g. through a GlobalKey).
-      _controller.setFlutterViewId(view.viewId).then((_) {
-        if (!mounted) return;
-        _reportSurfaceSize();
-        _reportWidgetPosition();
-      }).ignore();
+      // Keep native rehosts ordered, but skip targets superseded while native
+      // creation or an earlier rehost was pending. Those windows may be gone.
+      final generation = ++_hostChangeGeneration;
+      _hostChangeFuture = _hostChangeFuture
+          .then((_) => _rehost(view.viewId, generation))
+          .catchError((Object _) {});
     }
+  }
+
+  Future<void> _rehost(int viewId, int generation) async {
+    await _controller.ready;
+    if (!mounted || generation != _hostChangeGeneration) return;
+    await _controller._setFlutterViewId(viewId);
+    if (!mounted || generation != _hostChangeGeneration) return;
+    _reportSurfaceSize();
+    _reportWidgetPosition();
   }
 
   double get _scaleFactor =>
