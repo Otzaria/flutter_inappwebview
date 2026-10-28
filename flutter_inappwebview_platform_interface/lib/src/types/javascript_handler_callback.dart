@@ -25,8 +25,10 @@ typedef dynamic JavaScriptHandlerFunction(JavaScriptHandlerFunctionData data);
 ///
 ///Return it from a handler to send [json] to JavaScript as-is, without decoding
 ///it and encoding it again on the Dart side. This avoids blocking the UI isolate
-///when a large value is already stored as JSON. [json] must be valid JSON:
-///some platforms embed it in JavaScript code, where invalid JSON never settles the call.
+///when a large value is already stored as JSON. [json] must be valid JSON;
+///it is parsed as data on the receiving side, not evaluated as JavaScript code.
+///Return this object directly: nesting it inside another value uses [toJson]
+///and decodes and re-encodes the JSON for compatibility.
 class JavaScriptHandlerJsonResult {
   ///The JSON text sent to JavaScript.
   final String json;

@@ -197,8 +197,13 @@ public class JavaScriptBridgeInterface {
                 // The webview has already been disposed, ignore.
                 return;
               }
+              // JSON text is data, not a JavaScript expression (e.g. duplicate
+              // __proto__ keys). Keep decoding off Dart's UI isolate.
+              String jsonText = JSONObject.quote(json instanceof String ? (String) json : "null")
+                      .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029");
               String sourceCode = "if (window." + JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME() + "[" + _callHandlerID + "] != null) { " +
-                      "window." + JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME() + "[" + _callHandlerID + "].resolve(" + json + "); " +
+                      "try { window." + JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME() + "[" + _callHandlerID + "].resolve(JSON.parse(" + jsonText + ")); } " +
+                      "catch (error) { window." + JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME() + "[" + _callHandlerID + "].reject(error); } " +
                       "delete window." + JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME() + "[" + _callHandlerID + "]; " +
                       "}";
               inAppWebView.evaluateJavascript(sourceCode, (ValueCallback<String>) null);
