@@ -40,7 +40,8 @@ namespace flutter_inappwebview_plugin
       return Call{ std::move(header), raw.substr(newline + 1) };
     }
 
-    // [valueJson] comes from Dart's jsonEncode and is embedded as is.
+    // [valueJson] is JSON from Dart, possibly already encoded by the caller.
+    // PostWebMessageAsJson parses it as JSON without rebuilding Dart objects.
     static std::string resolution(const std::string& bridgeName,
                                   const int64_t id, const std::string& valueJson)
     {
@@ -64,7 +65,8 @@ namespace flutter_inappwebview_plugin
       const auto entry = "window." + bridgeName + "[" + std::to_string(id) + "]";
       const auto settle = error.has_value()
         ? "p.reject(new Error(" + errorJson(error.value()) + "));"
-        : "p.resolve(" + valueJson + ");";
+        : "try { p.resolve(JSON.parse(" + errorJson(valueJson) + ")); } "
+          "catch (error) { p.reject(error); }";
       return "(function() { var p = " + entry + "; if (p != null) { delete " +
              entry + "; " + settle + " } })();";
     }

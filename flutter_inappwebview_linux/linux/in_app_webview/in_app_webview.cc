@@ -5968,25 +5968,19 @@ void InAppWebView::ResolveInternalHandlerWithReply(WebKitScriptMessageReply* rep
     return;
   }
   
-  // Parse the JSON result and create a JSCValue
-  JSCValue* replyValue = nullptr;
-  
-  if (jsonResult == "null" || jsonResult.empty()) {
-    replyValue = jsc_value_new_null(context);
-  } else if (jsonResult[0] == '"') {
-    // It's a quoted string - evaluate it to get the actual string value
-    replyValue = jsc_context_evaluate(context, jsonResult.c_str(), -1);
-  } else {
-    // Parse as JSON
-    std::string parseScript = "(" + jsonResult + ")";
-    replyValue = jsc_context_evaluate(context, parseScript.c_str(), -1);
+  // Parse data as JSON, not as a JavaScript expression. Object literals have
+  // different __proto__ semantics and reject valid JSON with duplicate keys.
+  JSCValue* replyValue = jsc_value_new_from_json(context, jsonResult.c_str());
+  if (replyValue == nullptr || jsc_context_get_exception(context) != nullptr) {
+    webkit_script_message_reply_return_error_message(reply, "Invalid JavaScript handler JSON result");
+    if (replyValue != nullptr) {
+      g_object_unref(replyValue);
+    }
+    g_object_unref(context);
+    webkit_script_message_reply_unref(reply);
+    return;
   }
-  
-  if (replyValue == nullptr) {
-    // Fallback: return the raw string
-    replyValue = jsc_value_new_string(context, jsonResult.c_str());
-  }
-  
+
   // Send the reply back to JavaScript
   webkit_script_message_reply_return_value(reply, replyValue);
   

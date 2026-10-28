@@ -2595,10 +2595,36 @@ if(window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)] 
                 if let r = response as? String {
                     json = r
                 }
-                
+
+                // Pass the JSON string as data so large replies need no native
+                // quoting or object conversion on the main thread.
+                if #available(macOS 11.0, *) {
+                    webView.callAsyncJavaScript("""
+if(window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)] != null) {
+    try {
+        window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)].resolve(JSON.parse(jsonText));
+    } catch (error) {
+        window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)].reject(error);
+    }
+    delete window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)];
+}
+""", arguments: ["jsonText": json], frame: nil, contentWorld: .page, completionHandler: nil)
+                    return
+                }
+
+                // Quote JSON text without decoding it into native objects. JSON is
+                // not an equivalent JavaScript expression (notably __proto__).
+                let jsonText = Util.JSONStringify(value: [json])
+                    .replacingOccurrences(of: "\u{2028}", with: "\\u2028", options: .literal)
+                    .replacingOccurrences(of: "\u{2029}", with: "\\u2029", options: .literal)
+
                 webView.evaluateJavaScript("""
 if(window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)] != null) {
-    window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)].resolve(\(json));
+    try {
+        window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)].resolve(JSON.parse(\(jsonText)[0]));
+    } catch (error) {
+        window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)].reject(error);
+    }
     delete window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)];
 }
 """, completionHandler: nil)
