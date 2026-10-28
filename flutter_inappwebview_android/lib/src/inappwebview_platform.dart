@@ -660,12 +660,8 @@ class _PlatformWebViewEnvironment extends PlatformWebViewEnvironment {
         status: 'timeout',
         duration: stopwatch.elapsed,
       );
-    } on PlatformException {
-      return WebViewEnvironmentPrewarmResult(
-        status: 'unavailable',
-        duration: stopwatch.elapsed,
-      );
-    } on MissingPluginException {
+    } catch (_) {
+      // Prewarming is best effort, including unavailable plugins and malformed replies.
       return WebViewEnvironmentPrewarmResult(
         status: 'unavailable',
         duration: stopwatch.elapsed,

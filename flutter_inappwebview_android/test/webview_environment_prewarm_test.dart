@@ -56,6 +56,17 @@ void main() {
     expect((await environment().prewarm())!.status, 'unavailable');
   });
 
+  test('malformed native replies remain best effort', () async {
+    for (final reply in <Object>[
+      'not a map',
+      {'status': 42, 'durationMs': 8},
+      {'status': 'ok', 'durationMs': 'not a duration'},
+    ]) {
+      messenger.setMockMethodCallHandler(channel, (call) async => reply);
+      expect((await environment().prewarm())!.status, 'unavailable');
+    }
+  });
+
   testWidgets('channel deadline completes if native never replies', (
     tester,
   ) async {
