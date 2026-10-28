@@ -82,6 +82,24 @@ dependencies:
 Do not combine these packages with overrides pointing to published platform
 implementations or a different Git revision.
 
+### Preparing WebView startup
+
+Call `await WebViewEnvironment.prewarm()` before creating the first WebView to
+prepare supported startup work asynchronously. Prewarming is optional: failures
+are returned as results, and unsupported platforms return `null`.
+
+| Platform | Behavior |
+| --- | --- |
+| Windows | Loads WebView2 through a temporary environment on a background STA. Pass the same environment settings to `prewarm` and the later `create`. Concurrent identical calls share work; completed results are not cached. |
+| Android | Uses AndroidX 1.14's experimental startup API with UI tasks disabled. Apply `ProcessGlobalConfig` first. Only background startup work is warmed; the first WebView still performs UI initialization. Windows settings are ignored. The first outcome is reused within the engine. |
+| Linux | `prewarm` returns `null`. An explicit `WebViewEnvironment.create()` can prepare and retain the WebKit context for later views. |
+| iOS, macOS, Web | `prewarm` returns `null`. |
+
+Native startup has a 30-second deadline, with a Dart reply timeout of 31 seconds
+on Windows and 35 seconds on Android. Provider initialization cannot be
+interrupted, so its worker may continue after a timeout. Prewarming does not
+guarantee that subsequent view creation will avoid all startup costs.
+
 
 Add `flutter_inappwebview` as a [dependency in your pubspec.yaml file](https://flutter.io/using-packages/).
 
