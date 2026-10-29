@@ -383,7 +383,9 @@ gtest_discover_tests(${TEST_RUNNER} DISCOVERY_TIMEOUT 60)
 
 # Exercise the shipped bytecode on software Direct3D, independently of Flutter
 # and of whether the build uses the GPU or PixelBuffer bridge.
-set(SHADER_TEST_RUNNER "${PROJECT_NAME}_frame_compare_shader_test")
+# MSVC repeats the target name in intermediate manifest paths. Including the
+# full plugin name here exceeds MAX_PATH in the example's nested CI build.
+set(SHADER_TEST_RUNNER "inappwebview_frame_compare_test")
 add_executable(${SHADER_TEST_RUNNER} test/frame_compare_shader_test.cpp)
 apply_standard_settings(${SHADER_TEST_RUNNER})
 target_include_directories(${SHADER_TEST_RUNNER} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
