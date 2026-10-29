@@ -20,9 +20,8 @@
 - Coalesced surface size reports to at most one per frame, skipped unchanged sizes natively, and rebuilt the capture frame pool only when the captured size actually changed.
 - Shipped the captured-frame comparison shader precompiled instead of compiling it with `d3dcompiler_47.dll` on the platform thread when the first WebView starts capturing; on slow disks loading and compiling it blocked the app for seconds.
 - Saved one full-frame GPU copy per changed WebView frame by swapping the comparison textures instead of copying between them.
-- Kept the shader compiler DLL loaded until its result and error blobs are released.
 - Published the first captured frame after creation, resizing, or resuming capture.
-- Reused frame-comparison shader bytecode and texture resource views across comparisons.
+- Reused texture resource views across frame comparisons.
 - Fixed leaked WebView2 response references when serving custom and intercepted resources.
 - Fixed leaked COM stream references in custom responses, intercepted responses, and request bodies.
 - Fixed reversed horizontal scrolling: two-finger trackpad pans and mouse
