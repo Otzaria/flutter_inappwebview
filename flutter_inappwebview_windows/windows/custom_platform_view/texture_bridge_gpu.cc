@@ -1,17 +1,15 @@
 #include "texture_bridge_gpu.h"
 
-#include <d3dcompiler.h>
-
 #include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "frame_compare_cs.h"
 #include "surface_pool_slot.h"
 #include "util/direct3d11.interop.h"
 
@@ -19,85 +17,11 @@ namespace flutter_inappwebview_plugin
 {
   namespace
   {
-    // Writes 1 into a raw buffer if any pixel of |a| differs from |b|. Both
-    // textures are B8G8R8A8_UNORM of the same size; unorm loads of equal bytes
-    // yield equal floats, so the comparison is exact.
-    constexpr char kCompareShader[] = R"hlsl(
-Texture2D<float4> a : register(t0);
-Texture2D<float4> b : register(t1);
-RWByteAddressBuffer result : register(u0);
-
-[numthreads(16, 16, 1)]
-void main(uint3 id : SV_DispatchThreadID) {
-  uint width, height;
-  a.GetDimensions(width, height);
-  if (id.x >= width || id.y >= height) {
-    return;
-  }
-  if (any(a.Load(int3(id.xy, 0)) != b.Load(int3(id.xy, 0)))) {
-    result.Store(0, 1u);
-  }
-}
-)hlsl";
-
-    typedef HRESULT(WINAPI* D3DCompileFn)(LPCVOID, SIZE_T, LPCSTR,
-      const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR, UINT, UINT,
-      ID3DBlob**, ID3DBlob**);
-
     constexpr UINT kCompareResultBytes = 16;
     // Longest wait for the comparison result before the frame is published
     // unseen; 99% of results arrive sooner (fork measurements).
     constexpr auto kCompareWait = std::chrono::microseconds(1000);
     constexpr size_t kSurfacePoolSize = 2;
-
-    // The shader is identical for every comparer. Cache only immutable CPU
-    // bytecode; device resources remain owned by their GraphicsContext or
-    // TextureBridgeGpu and are released with those objects.
-    const std::vector<uint8_t>* GetCompareShaderBytecode()
-    {
-      struct Cache {
-        std::mutex mutex;
-        std::vector<uint8_t> bytecode;
-      };
-      static Cache cache;
-      const std::lock_guard<std::mutex> lock(cache.mutex);
-      if (!cache.bytecode.empty()) {
-        return &cache.bytecode;
-      }
-
-      // d3dcompiler_47.dll ships with Windows 8.1 and later. Loaded on demand
-      // so the plugin has no link-time dependency on it. Failed compilation
-      // is not cached, allowing a later comparer to retry.
-      using ScopedModule = std::unique_ptr<
-        std::remove_pointer<HMODULE>::type, decltype(&FreeLibrary)>;
-      ScopedModule compiler(LoadLibraryW(L"d3dcompiler_47.dll"), FreeLibrary);
-      if (!compiler) {
-        return nullptr;
-      }
-      const auto compile = reinterpret_cast<D3DCompileFn>(
-        GetProcAddress(compiler.get(), "D3DCompile"));
-      // Keep the compiler loaded until both blobs have been read and released:
-      // their COM vtables may live in d3dcompiler_47.dll.
-      winrt::com_ptr<ID3DBlob> code;
-      winrt::com_ptr<ID3DBlob> errors;
-      const HRESULT compiled = compile
-        ? compile(kCompareShader, sizeof(kCompareShader) - 1, "frame_compare",
-          nullptr, nullptr, "main", "cs_5_0", 0, 0, code.put(), errors.put())
-        : E_FAIL;
-      if (FAILED(compiled) || !code) {
-        if (errors) {
-          std::cerr << "frame compare shader: ";
-          std::cerr.write(static_cast<const char*>(errors->GetBufferPointer()),
-            static_cast<std::streamsize>(errors->GetBufferSize()));
-          std::cerr << std::endl;
-        }
-        return nullptr;
-      }
-
-      const auto* begin = static_cast<const uint8_t*>(code->GetBufferPointer());
-      cache.bytecode.assign(begin, begin + code->GetBufferSize());
-      return &cache.bytecode;
-    }
   }
 
   struct TextureBridgeGpu::SurfacePool {
@@ -138,12 +62,8 @@ void main(uint3 id : SV_DispatchThreadID) {
       return false;
     }
 
-    const auto* bytecode = GetCompareShaderBytecode();
-    if (!bytecode) {
-      return false;
-    }
-    if (FAILED(device->CreateComputeShader(bytecode->data(),
-      bytecode->size(), nullptr, compare_shader_.put()))) {
+    if (FAILED(device->CreateComputeShader(kFrameCompareCs,
+      sizeof(kFrameCompareCs), nullptr, compare_shader_.put()))) {
       return false;
     }
 

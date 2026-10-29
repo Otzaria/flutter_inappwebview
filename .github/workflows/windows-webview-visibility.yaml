@@ -33,6 +33,11 @@ jobs:
         working-directory: flutter_inappwebview_windows
         run: flutter test
 
+      - name: Verify precompiled frame comparison shader
+        working-directory: flutter_inappwebview_windows
+        shell: pwsh
+        run: ./tool/update_frame_compare_shader.ps1 -Check
+
       - name: Generate Windows build
         working-directory: flutter_inappwebview_windows/example
         run: flutter build windows --debug --config-only

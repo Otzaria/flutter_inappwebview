@@ -273,6 +273,7 @@ if(NOT FLUTTER_WEBVIEW_WINDOWS_USE_TEXTURE_FALLBACK)
   target_sources("${PLUGIN_NAME}" PRIVATE
     "custom_platform_view/texture_bridge_gpu.cc"
     "custom_platform_view/texture_bridge_gpu.h"
+    "custom_platform_view/frame_compare_cs.h"
   )
 else()
   message(STATUS "Building with fallback PixelBuffer texture.")
@@ -379,4 +380,15 @@ target_link_libraries(${TEST_RUNNER} PRIVATE ${CMAKE_BINARY_DIR}/packages/nlohma
 # was observed killing --gtest_list_tests mid-print.
 include(GoogleTest)
 gtest_discover_tests(${TEST_RUNNER} DISCOVERY_TIMEOUT 60)
+
+# Exercise the shipped bytecode on software Direct3D, independently of Flutter
+# and of whether the build uses the GPU or PixelBuffer bridge.
+# MSVC repeats the target name in intermediate manifest paths. Including the
+# full plugin name here exceeds MAX_PATH in the example's nested CI build.
+set(SHADER_TEST_RUNNER "inappwebview_frame_compare_test")
+add_executable(${SHADER_TEST_RUNNER} test/frame_compare_shader_test.cpp)
+apply_standard_settings(${SHADER_TEST_RUNNER})
+target_include_directories(${SHADER_TEST_RUNNER} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(${SHADER_TEST_RUNNER} PRIVATE d3d11 gtest_main)
+gtest_discover_tests(${SHADER_TEST_RUNNER} DISCOVERY_TIMEOUT 60)
 endif()
