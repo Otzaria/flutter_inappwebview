@@ -273,6 +273,7 @@ if(NOT FLUTTER_WEBVIEW_WINDOWS_USE_TEXTURE_FALLBACK)
   target_sources("${PLUGIN_NAME}" PRIVATE
     "custom_platform_view/texture_bridge_gpu.cc"
     "custom_platform_view/texture_bridge_gpu.h"
+    "custom_platform_view/frame_compare_cs.h"
   )
 else()
   message(STATUS "Building with fallback PixelBuffer texture.")
