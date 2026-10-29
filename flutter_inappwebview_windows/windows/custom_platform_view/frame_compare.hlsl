@@ -2,8 +2,10 @@
 // textures are B8G8R8A8_UNORM of the same size; unorm loads of equal bytes
 // yield equal floats, so the comparison is exact.
 //
-// Regenerate frame_compare_cs.h after editing (Windows SDK fxc):
-//   fxc /nologo /T cs_5_0 /E main /Vn kFrameCompareCs /Fh frame_compare_cs.h frame_compare.hlsl
+// Regenerate from the package directory with Windows SDK 10.0.26100.0:
+//   ./tool/update_frame_compare_shader.ps1
+// Verify the checked-in bytecode without changing it:
+//   ./tool/update_frame_compare_shader.ps1 -Check
 Texture2D<float4> a : register(t0);
 Texture2D<float4> b : register(t1);
 RWByteAddressBuffer result : register(u0);
