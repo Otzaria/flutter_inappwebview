@@ -49,6 +49,8 @@ jobs:
         run: git -c core.whitespace=cr-at-eol diff --check HEAD^
       - name: Test native WebView creation failures and software fallback
         run: python3 flutter_inappwebview_linux/linux/test/run_creation_backend_test.py
+      - name: Test independent WPE focus and visibility
+        run: python3 flutter_inappwebview_linux/linux/test/run_activity_state_test.py
       - name: Test host lifetime and asynchronous dialogs
         run: python3 flutter_inappwebview_linux/linux/test/run_host_lifetime_test.py
       - name: Test explicit GDK scale parsing
@@ -57,3 +59,11 @@ jobs:
         run: flutter_inappwebview_linux/linux/test/run_wpe_probe_link_test.sh
       - name: Test bundled WPE runtime path selection
         run: flutter_inappwebview_linux/linux/test/run_wpe_bundle_paths_test.sh
+      - name: Test pixel conversion and FDO buffer capacity
+        run: |
+          flutter_inappwebview_linux/linux/test/run_pixel_buffer_conversion_test.sh
+          python3 flutter_inappwebview_linux/linux/test/run_fdo_pixel_buffer_test.py
+      - name: Test hidden pixel buffer lifetime on both Linux backends
+        env:
+          CXXFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer
+        run: python3 flutter_inappwebview_linux/linux/test/run_hidden_pixel_buffer_test.py
