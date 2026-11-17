@@ -1918,7 +1918,9 @@ public class InAppWebView: WKWebView, WKUIDelegate,
 
     public override func scrollWheel(with event: NSEvent) {
         unhandledScrollGestureForwarder.observe(event)
-        super.scrollWheel(with: event)
+        if !(superview is FlutterWebViewController) || unhandledScrollGestureForwarder.shouldSendToWebKit(event) {
+            super.scrollWheel(with: event)
+        }
     }
 
     @objc(_webView:didNotHandleWheelEvent:)

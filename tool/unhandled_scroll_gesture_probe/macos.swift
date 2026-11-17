@@ -110,8 +110,7 @@ func runLogicCases() {
         let events = gesture(dx: -80, dy: 4)
         events.forEach(f.observe)
         f.didNotHandle(events[1])
-        check(sameEvents(out, events), "logic: report after the gesture ended forwards all of it in order",
-              phases(out))
+        check(out.isEmpty, "logic: a report with later motion already in WebKit keeps the page", phases(out))
     }
     do {
         var out: [NSEvent] = []
@@ -119,7 +118,7 @@ func runLogicCases() {
         let events = gesture(dx: 80, dy: 0)
         for (i, e) in events.enumerated() {
             f.observe(e)
-            if i == 2 { f.didNotHandle(events[2]) }
+            if i == 1 { f.didNotHandle(events[1]) }
         }
         check(sameEvents(out, events), "logic: events after the decision are forwarded live", phases(out))
     }
@@ -128,9 +127,9 @@ func runLogicCases() {
         let f = UnhandledScrollGestureForwarder { out.append($0) }
         let events = gesture(dx: 80, dy: 0)
         events.forEach(f.observe)
-        f.didNotHandle(events[5]) // fifth moving event: the page used the first four
+        f.didNotHandle(events[5])
         f.didNotHandle(events[1])
-        check(out.isEmpty, "logic: a first report after the decision window keeps the page", phases(out))
+        check(out.isEmpty, "logic: a report after earlier page-owned motion keeps the page", phases(out))
     }
     do {
         var out: [NSEvent] = []
@@ -144,12 +143,56 @@ func runLogicCases() {
         var out: [NSEvent] = []
         let f = UnhandledScrollGestureForwarder { out.append($0) }
         let events = gesture(dx: -60, dy: 0, mayBegin: true)
-        events.forEach(f.observe)
+        events.prefix(3).forEach(f.observe)
         f.didNotHandle(events[0])
         f.didNotHandle(events[1])
         check(out.isEmpty, "logic: reports for the start events alone do not decide")
         f.didNotHandle(events[2])
+        events.dropFirst(3).forEach(f.observe)
         check(sameEvents(out, events), "logic: mayBegin and began belong to one gesture", phases(out))
+    }
+    do {
+        var out: [NSEvent] = []
+        let f = UnhandledScrollGestureForwarder { out.append($0) }
+        let events = gesture(dx: -80, dy: 0, momentum: true)
+        f.observe(events[0])
+        f.observe(events[1])
+        f.didNotHandle(events[1])
+        let allowed = events.dropFirst(2).filter { event in
+            f.observe(event)
+            return f.shouldSendToWebKit(event)
+        }
+        check(allowed.count == 1 && allowed[0].phase.contains(.ended),
+              "logic: host owns subsequent motion and momentum, WebKit still receives the end", phases(allowed))
+    }
+    do {
+        var out: [NSEvent] = []
+        let f = UnhandledScrollGestureForwarder { out.append($0) }
+        let events = gesture(dx: -80, dy: 0)
+        events.prefix(3).forEach(f.observe)
+        f.didNotHandle(events[2])
+        check(out.isEmpty, "logic: a used first motion cannot transfer ownership on the second motion")
+    }
+    do {
+        var out: [NSEvent] = []
+        let f = UnhandledScrollGestureForwarder { out.append($0) }
+        let began = makeEvent(dx: 12, phase: .began)
+        let changed = makeEvent(dx: 12, phase: .changed)
+        f.observe(began)
+        f.observe(changed)
+        f.didNotHandle(changed)
+        check(out.isEmpty, "logic: movement consumed during began keeps the page")
+    }
+    do {
+        var out: [NSEvent] = []
+        let f = UnhandledScrollGestureForwarder { out.append($0) }
+        let began = makeEvent(dx: 12, phase: .began)
+        f.observe(began)
+        f.didNotHandle(began)
+        let cancelled = makeEvent(phase: .cancelled)
+        f.observe(cancelled)
+        check(sameEvents(out, [began, cancelled]) && f.shouldSendToWebKit(cancelled),
+              "logic: unused motion during began can transfer, cancellation still reaches WebKit")
     }
     do {
         var out: [NSEvent] = []
@@ -165,8 +208,10 @@ func runLogicCases() {
         var out: [NSEvent] = []
         let f = UnhandledScrollGestureForwarder { out.append($0) }
         let events = gesture(dx: -60, dy: 0, momentum: true)
-        events.forEach(f.observe)
-        f.didNotHandle(events[1])
+        for (i, event) in events.enumerated() {
+            f.observe(event)
+            if i == 1 { f.didNotHandle(event) }
+        }
         check(out.count == events.count - 3 && out.allSatisfy { $0.momentumPhase.isEmpty },
               "logic: momentum events are never forwarded", phases(out))
     }
@@ -379,6 +424,85 @@ final class ProbeApplication: NSObject, NSApplicationDelegate {
         let shadowX = await js("sc.scrollLeft") as? Double ?? 1000
         check(out.isEmpty && shadowX != 1000, "webkit: a scroller in a closed shadow root keeps the swipe",
               "scrollLeft \(shadowX), got \(phases(out))")
+
+        await load(scroller)
+        var reverse = [makeEvent(phase: .began, at: center)]
+        reverse += (0..<4).map { _ in makeEvent(dx: 12, phase: .changed, at: center) }
+        reverse += (0..<16).map { _ in makeEvent(dx: -12, phase: .changed, at: center) }
+        reverse.append(makeEvent(phase: .ended, at: center))
+        reverse += [makeEvent(dx: -36, phase: .none, momentum: 1, at: center),
+                    makeEvent(dx: -18, phase: .none, momentum: 2, at: center),
+                    makeEvent(phase: .none, momentum: 3, at: center)]
+        out = await send(reverse)
+        let reverseX = await js("s.scrollLeft") as? Double ?? -1
+        check(out.isEmpty || reverseX == 0, "webkit: host-owned swipe cannot also scroll page after reversal",
+              "scrollLeft \(reverseX), forwarded \(out.count)")
+
+        out = await send(gesture(dx: -120, dy: 0, at: center))
+        let nextX = await js("s.scrollLeft") as? Double ?? 0
+        check(out.isEmpty && nextX > 0, "webkit: the next page-owned gesture scrolls after the host gesture ended",
+              "scrollLeft \(nextX), forwarded \(out.count)")
+
+        await load(scroller + "<script>s.scrollLeft=5</script>")
+        out = await send(gesture(dx: 120, dy: 0, at: center))
+        let edgeX = await js("s.scrollLeft") as? Double ?? -1
+        check(out.isEmpty && edgeX == 0, "webkit: a scroller reaching its edge keeps the entire gesture",
+              "scrollLeft \(edgeX), forwarded \(out.count)")
+
+        for terminal in [ScrollPhase.ended, .cancelled] {
+            await load(scroller)
+            var terminalMotion = [makeEvent(phase: .began, at: center),
+                                  makeEvent(dx: 12, phase: .changed, at: center)]
+            terminalMotion.append(makeEvent(dx: -60, phase: terminal, at: center))
+            out = await send(terminalMotion)
+            let terminalX = await js("s.scrollLeft") as? Double ?? -1
+            check(sameEvents(out, terminalMotion) && terminalX == 0,
+                  "webkit: host-owned nonzero terminal motion cannot scroll the page (\(terminal))",
+                  "scrollLeft \(terminalX), forwarded \(out.count)")
+        }
+
+        await load(scroller + "<script>s.scrollLeft=5</script>")
+        var movingBegan = [makeEvent(dx: 12, phase: .began, at: center)]
+        movingBegan += (0..<8).map { _ in makeEvent(dx: 12, phase: .changed, at: center) }
+        movingBegan.append(makeEvent(phase: .ended, at: center))
+        out = await send(movingBegan)
+        check(out.isEmpty, "webkit: scrolling during began cannot later transfer to the host", phases(out))
+
+        await load(scroller)
+        let cancel = [makeEvent(phase: .began, at: center),
+                      makeEvent(dx: 12, phase: .changed, at: center),
+                      makeEvent(phase: .cancelled, at: center)]
+        out = await send(cancel)
+        check(sameEvents(out, cancel), "webkit: a host-owned gesture delivers cancellation")
+        out = await send(gesture(dx: -120, dy: 0, at: center))
+        let cancelledX = await js("s.scrollLeft") as? Double ?? 0
+        check(out.isEmpty && cancelledX > 0, "webkit: page scrolling works after host cancellation")
+
+        await load(scroller)
+        var burst = [makeEvent(phase: .began, at: center),
+                     makeEvent(dx: 12, phase: .changed, at: center)]
+        burst += (0..<16).map { _ in makeEvent(dx: -12, phase: .changed, at: center) }
+        burst.append(makeEvent(phase: .ended, at: center))
+        recorder.received = []
+        burst.forEach { webView.scrollWheel(with: $0) }
+        await sleep(0.8)
+        let burstX = await js("s.scrollLeft") as? Double ?? -1
+        check(recorder.received.isEmpty && burstX > 0,
+              "webkit: a delayed unused report cannot claim a reversal already sent to WebKit",
+              "scrollLeft \(burstX), forwarded \(recorder.received.count)")
+
+        await load("<p id=t>טקסט נבחר בתוסף</p><script>const r=document.createRange();r.selectNodeContents(t);getSelection().addRange(r)</script>")
+        events = gesture(dx: -90, dy: 0, at: center)
+        out = await send(events)
+        let selected = await js("getSelection().toString()") as? String ?? ""
+        check(sameEvents(out, events) && selected == "טקסט נבחר בתוסף",
+              "webkit: forwarding an unused swipe preserves the page selection", selected)
+
+        await load("<canvas id=c style=\"position:absolute;inset:0;width:100%;height:100%\"></canvas><script>window.n=0;window.consumed=0;c.addEventListener('wheel',e=>{n++;if(n>3){consumed+=e.deltaX;e.preventDefault()}},{passive:false})</script>")
+        out = await send(gesture(dx: -180, dy: 0, steps: 12, at: center))
+        let consumed = await js("consumed") as? Double ?? 0
+        check(out.isEmpty || consumed == 0, "webkit: host-owned swipe cannot also be consumed by custom page",
+              "consumed \(consumed), forwarded \(out.count)")
 
         await load(plain)
         webView.removeFromSuperview()

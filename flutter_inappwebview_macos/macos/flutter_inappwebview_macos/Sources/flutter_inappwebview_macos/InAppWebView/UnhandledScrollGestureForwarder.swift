@@ -6,23 +6,9 @@
 import AppKit
 import WebKit
 
-/// Hands horizontal trackpad gestures that the page did not use to the host view.
-///
-/// WKWebView never passes an unused wheel event up the responder chain, so a host
-/// such as Flutter cannot react to a horizontal swipe over a page. WebKit reports
-/// every unused event asynchronously and in order through
-/// `_webView:didNotHandleWheelEvent:`, after scrolling (including frames and shadow
-/// trees), rubber-banding and `preventDefault()` have all had their say.
-///
-/// Ownership is decided once per gesture, from the first report: the host receives
-/// the whole gesture, in order and from its first event, only when one of the
-/// first moving events was unused and the movement so far is mostly horizontal.
-/// A gesture the page used, or one without a timely report, stays with the page.
-/// A gesture that began outside the web view (e.g. over Flutter content that then
-/// slid the web view under the pointer) already belongs to the host.
+/// Hands unused horizontal gestures to the host only before WebKit sees more motion.
+/// Delayed or coalesced reports keep the page, avoiding shared gesture ownership.
 public final class UnhandledScrollGestureForwarder {
-    /// Moving events after which a first report no longer hands the gesture over.
-    static let decisionWindow = 4
     /// Events kept while the owner is undecided.
     static let maxPendingEvents = 64
     /// A report this long after the gesture ended could interrupt the user's next gesture.
@@ -44,7 +30,7 @@ public final class UnhandledScrollGestureForwarder {
         self.forward = forward
     }
 
-    /// Records an event that is about to be sent to WebKit.
+    /// Records the event before deciding whether WebKit may receive it.
     public func observe(_ event: NSEvent) {
         guard UnhandledScrollGestureForwarder.isTrackpadGestureEvent(event) else {
             return
@@ -58,6 +44,7 @@ public final class UnhandledScrollGestureForwarder {
         }
         guard tracking else {
             if phase.contains(.changed) || phase.contains(.ended) || phase.contains(.cancelled) {
+                owner = .host
                 forward(event)
             }
             return
@@ -82,7 +69,7 @@ public final class UnhandledScrollGestureForwarder {
 
     /// Handles WebKit's report that it did not use [event].
     public func didNotHandle(_ event: NSEvent) {
-        if let endedAt = endedAt,
+        if owner == .undecided, let endedAt = endedAt,
            ProcessInfo.processInfo.systemUptime - endedAt > UnhandledScrollGestureForwarder.lateReportAfterEnd {
             giveToPage()
         }
@@ -94,7 +81,8 @@ public final class UnhandledScrollGestureForwarder {
         let moving = pending[...index].filter(UnhandledScrollGestureForwarder.isMoving)
         let dx = moving.reduce(CGFloat(0)) { $0 + $1.scrollingDeltaX }
         let dy = moving.reduce(CGFloat(0)) { $0 + $1.scrollingDeltaY }
-        guard moving.count <= UnhandledScrollGestureForwarder.decisionWindow, abs(dx) > abs(dy) else {
+        guard moving.count == 1, pending.lastIndex(where: UnhandledScrollGestureForwarder.isMoving) == index,
+              abs(dx) > abs(dy) else {
             giveToPage()
             return
         }
@@ -104,9 +92,13 @@ public final class UnhandledScrollGestureForwarder {
         events.forEach(forward)
     }
 
-    /// Keeps a page that cannot scroll sideways from bouncing sideways: WebKit counts
-    /// that bounce as using the event, so no horizontal swipe would ever be unused.
-    /// `_rubberBandingEnabled` is WebKit SPI (macOS 10.13.4); without it nothing changes.
+    // End/cancel still clears WebKit's scrolling latch after a host-owned gesture.
+    public func shouldSendToWebKit(_ event: NSEvent) -> Bool {
+        return owner != .host || (!event.phase.contains(.changed) && event.momentumPhase.isEmpty)
+    }
+
+    /// WebKit counts horizontal rubber-banding as consumed scrolling.
+    /// Without the optional SPI, normal WebKit behavior remains unchanged.
     public static func stopHorizontalRubberBanding(_ webView: WKWebView) {
         let key = "rubberBandingEnabled"
         guard webView.responds(to: NSSelectorFromString("_setRubberBandingEnabled:")),
@@ -140,7 +132,7 @@ public final class UnhandledScrollGestureForwarder {
     }
 
     static func isMoving(_ event: NSEvent) -> Bool {
-        return event.phase.contains(.changed)
+        return (event.phase.contains(.began) || event.phase.contains(.changed))
             && (event.scrollingDeltaX != 0 || event.scrollingDeltaY != 0)
     }
 
