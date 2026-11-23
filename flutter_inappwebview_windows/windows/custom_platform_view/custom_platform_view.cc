@@ -227,7 +227,18 @@ namespace flutter_inappwebview_plugin
       view->onVisibilityChanged(nullptr);
     }
     event_sink_ = nullptr;
-    texture_registrar_->UnregisterTexture(texture_id_, nullptr);
+    if (texture_bridge_) {
+      // Capture and its timer are owner-thread work; stopped, the bridge only
+      // answers the raster thread with an empty descriptor.
+      texture_bridge_->Stop();
+      texture_bridge_->SetOnFrameAvailable(nullptr);
+    }
+    // The raster thread may still draw the texture until this callback runs.
+    auto retired = std::make_shared<std::pair<std::unique_ptr<TextureBridge>,
+      std::unique_ptr<flutter::TextureVariant>>>(std::move(texture_bridge_),
+        std::move(flutter_texture_));
+    texture_registrar_->UnregisterTexture(texture_id_,
+      [retired = std::move(retired)]() mutable { retired.reset(); });
   }
 
   void CustomPlatformView::RegisterEventHandlers()
