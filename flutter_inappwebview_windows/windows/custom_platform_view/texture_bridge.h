@@ -38,6 +38,9 @@ namespace flutter_inappwebview_plugin
 
     bool Start();
     void Stop();
+    // Stops for good and drops the capture item on the owner thread, so a
+    // bridge later destroyed on Flutter's raster thread releases no WinRT state.
+    void Shutdown();
     // Closes the capture session while the WebView is hidden and reopens it
     // when shown. Flutter keeps the last frame meanwhile.
     void SetCaptureSuspended(bool suspended);

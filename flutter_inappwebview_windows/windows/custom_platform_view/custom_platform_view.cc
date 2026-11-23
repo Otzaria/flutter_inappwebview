@@ -228,9 +228,9 @@ namespace flutter_inappwebview_plugin
     }
     event_sink_ = nullptr;
     if (texture_bridge_) {
-      // Capture and its timer are owner-thread work; stopped, the bridge only
-      // answers the raster thread with an empty descriptor.
-      texture_bridge_->Stop();
+      // Capture, its timer and WinRT objects are owner-thread work; shut down,
+      // the bridge only answers the raster thread with an empty descriptor.
+      texture_bridge_->Shutdown();
       texture_bridge_->SetOnFrameAvailable(nullptr);
     }
     // The raster thread may still draw the texture until this callback runs.
